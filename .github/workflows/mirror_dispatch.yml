@@ -1,0 +1,13 @@
+name: Mirror Upbit Materials (5min, chunked, robust)
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions: { contents: write }
+concurrency: { group: mirror-upbit, cancel-in-progress: true }
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # … (기존 steps 그대로 붙여넣기) …
