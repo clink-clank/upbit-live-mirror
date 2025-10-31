@@ -1,9 +1,9 @@
 name: Mirror Upbit Materials (5min, chunked, robust)
 
 on:
+  workflow_dispatch: {}
   schedule:
-    - cron: "*/5 * * * *"   # 5분마다(UTC)
-  workflow_dispatch:
+    - cron: "*/5 * * * *"   # every 5 min (UTC)
 
 permissions:
   contents: write
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE: "https://api.shenqn.uk"
-      CHUNK: "30"
+      CHUNK: "15"
       UA: "GA-mirror/1.1"
     steps:
       - uses: actions/checkout@v4
@@ -28,78 +28,43 @@ jobs:
       - name: Build KRW market list (from Upbit public API)
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" \
-            -H "User-Agent: $UA" \
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
           | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
-      - name: Fetch materials in chunks (with robust retries & diagnostics)
+      - name: Fetch materials in chunks (with retries)
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
           mapfile -t ARR < markets.txt
           n=${#ARR[@]}
-          echo "::group::Chunk plan"
-          echo "total_markets=$n  chunk_size=$CHUNK"
-          echo "::endgroup::"
-
-          i=0
-          idx=1
+          i=0; idx=1
           while [ $i -lt $n ]; do
             part=$(IFS=,; echo "${ARR[@]:i:CHUNK}")
             out="parts/part_${idx}.json"
-            echo "::group::fetch part_${idx}"
-            echo "slice: i=$i size=$CHUNK → $out"
-
             ok=0
-            for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(python - <<'PY'
-import random,sys
-base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][int(sys.argv[1])-1]
-j=random.uniform(0,0.7)
-print(base+j)
-PY
-              "$attempt")
-              echo "attempt=$attempt sleep=${delay}s"
-              sleep "$delay"
-
+            for attempt in 1 2 3 4 5 6; do
+              sleep 0.$((RANDOM%7))
               url="${BASE}/materials.json?mode=selected&full=1&markets=${part}"
               code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
                          -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
-              echo "HTTP=$code"
-              if [ "$code" = "200" ]; then
-                if jq -e 'type=="object" and (.markets|type=="array")' "$out.tmp" >/dev/null 2>&1; then
-                  cnt=$(jq '.markets|length' "$out.tmp")
-                  echo "markets_in_part=$cnt"
-                  if [ "$cnt" -ge 1 ]; then
-                    mv "$out.tmp" "$out"
-                    ok=1
-                    break
-                  fi
-                fi
+              echo "part_${idx} attempt=${attempt} HTTP=${code}"
+              if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
+                mv "$out.tmp" "$out"; ok=1; break
               fi
             done
-
-            if [ "$ok" != "1" ]; then
-              echo "::error title=Chunk failed::part_${idx} failed after retries"
-              rm -f "$out.tmp"
-            fi
-            echo "::endgroup::"
+            [ "$ok" = "1" ] || { echo "::warning title=Chunk failed::part_${idx}"; rm -f "$out.tmp"; }
             i=$((i+CHUNK)); idx=$((idx+1))
           done
-
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
-          got=$(wc -l < parts/list.txt || echo 0)
-          echo "::notice title=Parts fetched::$got parts ready"
+          echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
 
-      - name: Merge parts → LLM_MATERIALS.json (and verify)
+      - name: Merge parts → LLM_MATERIALS.json
         run: |
           set -euo pipefail
           if [ ! -s parts/list.txt ]; then
-            echo "::error title=No parts::No successful part files"
-            exit 1
+            echo "::error title=No parts::No successful part files"; exit 1
           fi
-
           jq -s '
             def M: [.[].markets[]];
             {
@@ -113,14 +78,8 @@ PY
               ),
               markets: (M | unique_by(.market))
             }' $(cat parts/list.txt) > LLM_MATERIALS.json
-
-          total=$(jq '.markets|length' LLM_MATERIALS.json)
-          echo "::notice title=Total merged markets::$total"
-          if [ "$total" -lt 60 ]; then
-            echo "::warning title=Low coverage::merged markets=$total (<60). Check rate limits or CF blocks."
-          fi
-          ls -lh LLM_MATERIALS.json
-          head -c 200 LLM_MATERIALS.json || true
+          jq '.meta.params.markets|length as $m | .markets|length as $n | {merged_markets:$n, meta_markets:$m}' LLM_MATERIALS.json
+          test "$(jq -r '.markets|length' LLM_MATERIALS.json)" -ge 60 || echo "::warning title=Low coverage::merged markets < 60"
 
       - name: Commit if changed
         run: |
@@ -128,8 +87,6 @@ PY
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add LLM_MATERIALS.json || true
-          if git diff --cached --quiet; then
-            echo "No changes"; exit 0
-          fi
+          git diff --cached --quiet && { echo "No changes"; exit 0; }
           git commit -m "Update materials (chunked robust) $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           git push
