@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE: "https://api.shenqn.uk"
-      CHUNK: "30"
+      CHUNK: "15"
       UA: "GA-mirror/1.1"
     steps:
       - uses: actions/checkout@v4
