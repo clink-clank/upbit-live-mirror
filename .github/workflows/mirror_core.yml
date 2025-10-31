@@ -1,6 +1,12 @@
 name: Mirror Core
 on:
   workflow_call:
+    inputs:
+      chunk:
+        description: "Chunk size"
+        required: false
+        type: string
+        default: "15"
 
 permissions:
   contents: write
@@ -14,18 +20,20 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE: "https://api.shenqn.uk"
-      CHUNK: "15"
       UA: "GA-mirror/1.1"
+      CHUNK: ${{ inputs.chunk }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Build KRW market list (from Upbit public API)
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
-          | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"           | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
+
       - name: Fetch materials in chunks (robust)
         run: |
           set -euo pipefail
@@ -39,15 +47,16 @@ jobs:
             out="parts/part_${idx}.json"
             ok=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(python - <<'PY' "$attempt")
-import random,sys
+              delay=$(
+                python3 - "$attempt" <<'PY'
+import random, sys
 base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][int(sys.argv[1])-1]
 print(base+random.uniform(0,0.7))
 PY
+              )
               echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
               url="${BASE}/materials.json?mode=selected&full=1&markets=${part}"
-              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
-                         -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
+              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json"                          -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
               echo "HTTP=$code"
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
@@ -58,6 +67,7 @@ PY
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
           echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
+
       - name: Merge parts → LLM_MATERIALS.json (and verify)
         run: |
           set -euo pipefail
@@ -81,6 +91,7 @@ PY
           echo "::notice title=Total merged markets::$total"
           [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
           ls -lh LLM_MATERIALS.json
+
       - name: Commit if changed
         run: |
           set -e
