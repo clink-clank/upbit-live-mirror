@@ -1,0 +1,35 @@
+name: Mirror Upbit Materials (10min)
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch upstream with retries
+        run: |
+          set -euo pipefail
+          URL="https://api.shenqn.uk/materials.json?mode=all&full=1"
+          for d in 0 0.6 1.0 1.7 3.0; do
+            sleep "$d"
+            if curl -fsS "$URL" -o LLM_MATERIALS.json; then
+              echo "OK"; break
+            else
+              echo "retry..."
+            fi
+          done
+      - name: Commit if changed
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add LLM_MATERIALS.json || true
+          if git diff --cached --quiet; then
+            echo "No changes"; exit 0
+          fi
+          git commit -m "Update materials $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git push
