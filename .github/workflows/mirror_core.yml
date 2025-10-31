@@ -19,16 +19,19 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     env:
-      BASE: "https://api.shenqn.uk"
-      UA: "GA-mirror/1.1"
+      BASE: https://api.shenqn.uk
+      UA: GA-mirror/1.1
       CHUNK: ${{ inputs.chunk }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install jq
+        shell: bash
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Build KRW market list (from Upbit public API)
+        shell: bash
         run: |
           set -euo pipefail
           curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
@@ -36,6 +39,7 @@ jobs:
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks (robust)
+        shell: bash
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
@@ -48,13 +52,12 @@ jobs:
             out="parts/part_${idx}.json"
             ok=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(
-                python3 - "$attempt" <<'PY'
+              delay=$(python3 - "$attempt" <<'PY'
 import random, sys
 base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][int(sys.argv[1])-1]
 print(base+random.uniform(0,0.7))
 PY
-              )
+)
               echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
               url="${BASE}/materials.json?mode=selected&full=1&markets=${part}"
               code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
@@ -71,6 +74,7 @@ PY
           echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
 
       - name: Merge parts into LLM_MATERIALS.json (and verify)
+        shell: bash
         run: |
           set -euo pipefail
           if [ ! -s parts/list.txt ]; then
@@ -95,6 +99,7 @@ PY
           ls -lh LLM_MATERIALS.json
 
       - name: Commit if changed
+        shell: bash
         run: |
           set -e
           git config user.name  "github-actions[bot]"
