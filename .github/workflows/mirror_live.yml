@@ -3,7 +3,7 @@ name: Mirror Upbit Materials (5min, chunked, robust - clean)
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "*/5 * * * *"   # 매 5분(UTC)
+    - cron: "*/5 * * * *"   # every 5 minutes (UTC)
 
 permissions:
   contents: write
