@@ -9,7 +9,7 @@ on:
         default: "15"
 
 jobs:
-  call-mirror-core:
+  call-core:
     uses: ./.github/workflows/mirror_core.yml
     with:
       chunk: ${{ github.event.inputs.chunk }}
