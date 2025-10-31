@@ -1,41 +1,37 @@
+
 name: Mirror Upbit Materials (hot, single-file)
 
 on:
   workflow_dispatch:
     inputs:
       chunk:
-        description: "Chunk size"
-        required: false
-        type: string
+        description: "Markets per request (5~25 추천)"
         default: "15"
-
-permissions:
-  contents: write
-
-concurrency:
-  group: mirror-upbit
-  cancel-in-progress: true
+        required: false
 
 jobs:
   mirror:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      BASE: "https://api.shenqn.uk"
-      UA: "GA-mirror/1.1"
-      CHUNK: ${{ inputs.chunk }}
+      BASE: https://api.shenqn.uk
+      UA: GA-mirror/1.1
+      CHUNK: ${{ github.event.inputs.chunk || '15' }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
 
       - name: Build KRW market list (from Upbit public API)
+        shell: bash
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"           | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks (robust)
+        shell: bash
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
@@ -53,9 +49,8 @@ jobs:
               # random backoff without heredoc to avoid YAML parsing issues
               delay=$(python3 -c 'import random,sys;a=int(sys.argv[1]);base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1];print(base+random.uniform(0,0.7))' "$attempt")
               echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
-
               url="${BASE}/materials.json?mode=selected&full=1&markets=${enc_part}"
-              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json"                          -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
+              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
               echo "HTTP=$code"
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
@@ -68,35 +63,39 @@ jobs:
           echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
 
       - name: Merge parts → LLM_MATERIALS.json (and verify)
+        shell: bash
         run: |
           set -euo pipefail
           if [ ! -s parts/list.txt ]; then
             echo "::error title=No parts::No successful part files"; exit 1
           fi
+          # Some servers may return a status/info object alongside markets; guard for that schema.
           jq -s '
-            def M: [.[].markets[]];
+            def M: [.[].markets[]?] | map(select(. != null)) ;
+            def F: .[0];
             {
-              version:    (.[0].version // "LLM_MATERIALS_V1"),
-              timestamps: (.[0].timestamps // {kst:"",utc:""}),
-              meta: (
-                (.[0].meta // {}) as $m
-                | $m.params = ($m.params // {})
-                | $m.params.markets = (M | map(.market) | unique)
-                | $m
-              ),
+              version:    (F.version // "LLM_MATERIALS_V1"),
+              timestamps: (F.timestamps // {kst:"",utc:""}),
+              meta: ((F.meta // {}) | .params = (.params // {}) | .params.markets = (M | map(.market) | unique)),
               markets: (M | unique_by(.market))
-            }' $(cat parts/list.txt) > LLM_MATERIALS.json
+            }
+          ' $(cat parts/list.txt) > LLM_MATERIALS.json
+
           total=$(jq '.markets|length' LLM_MATERIALS.json)
           echo "::notice title=Total merged markets::$total"
           [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
           ls -lh LLM_MATERIALS.json
 
       - name: Commit if changed
+        shell: bash
         run: |
-          set -e
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add LLM_MATERIALS.json || true
-          git diff --cached --quiet && { echo "No changes"; exit 0; }
-          git commit -m "Update materials (chunked robust) $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          git push
+          set -euo pipefail
+          if git diff --quiet -- LLM_MATERIALS.json; then
+            echo "No changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add LLM_MATERIALS.json
+            git commit -m "chore: update LLM_MATERIALS.json (auto)"
+            git push
+          fi
