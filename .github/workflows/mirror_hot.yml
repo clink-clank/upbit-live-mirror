@@ -1,9 +1,7 @@
-name: Mirror Upbit Materials (live 5min)
+name: Mirror Upbit Materials (hot)
 
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes (UTC)
 
 permissions:
   contents: write
