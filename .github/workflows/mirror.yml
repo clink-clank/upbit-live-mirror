@@ -46,13 +46,11 @@ jobs:
           i=0
           idx=1
           while [ $i -lt $n ]; do
-            # slice
             part=$(IFS=,; echo "${ARR[@]:i:CHUNK}")
             out="parts/part_${idx}.json"
             echo "::group::fetch part_${idx}"
             echo "slice: i=$i size=$CHUNK → $out"
 
-            # retries with backoff + jitter
             ok=0
             for attempt in 1 2 3 4 5 6 7 8; do
               delay=$(python - <<'PY'
@@ -70,7 +68,6 @@ PY
                          -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
               echo "HTTP=$code"
               if [ "$code" = "200" ]; then
-                # validate json & count
                 if jq -e 'type=="object" and (.markets|type=="array")' "$out.tmp" >/dev/null 2>&1; then
                   cnt=$(jq '.markets|length' "$out.tmp")
                   echo "markets_in_part=$cnt"
@@ -85,14 +82,12 @@ PY
 
             if [ "$ok" != "1" ]; then
               echo "::error title=Chunk failed::part_${idx} failed after retries"
-              # 계속 진행(부분 성공이라도 병합) — 실패 파트는 스킵
               rm -f "$out.tmp"
             fi
             echo "::endgroup::"
             i=$((i+CHUNK)); idx=$((idx+1))
           done
 
-          # 리스트 만들기
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
           got=$(wc -l < parts/list.txt || echo 0)
           echo "::notice title=Parts fetched::$got parts ready"
@@ -121,7 +116,6 @@ PY
 
           total=$(jq '.markets|length' LLM_MATERIALS.json)
           echo "::notice title=Total merged markets::$total"
-          # 기대치 미달이면 실패로 표시해 원인 파악 용이
           if [ "$total" -lt 60 ]; then
             echo "::warning title=Low coverage::merged markets=$total (<60). Check rate limits or CF blocks."
           fi
