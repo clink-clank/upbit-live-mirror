@@ -19,8 +19,8 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     env:
-      BASE: https://api.shenqn.uk
-      UA: GA-mirror/1.1
+      BASE: "https://api.shenqn.uk"
+      UA: "GA-mirror/1.1"
       CHUNK: ${{ inputs.chunk }}
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +28,13 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Build KRW market list
+      - name: Build KRW market list (from Upbit public API)
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"           | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
-      - name: Fetch materials in chunks
+      - name: Fetch materials in chunks (robust)
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
@@ -47,13 +47,7 @@ jobs:
             out="parts/part_${idx}.json"
             ok=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(
-                python3 - "$attempt" <<'PY'
-import random, sys
-base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][int(sys.argv[1])-1]
-print(base+random.uniform(0,0.7))
-PY
-              )
+              delay=$(python3 -c "import random,sys;a=int(sys.argv[1]);base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1];print(base+random.uniform(0,0.7))" "$attempt")
               echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
               url="${BASE}/materials.json?mode=selected&full=1&markets=${part}"
               code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json"                          -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
@@ -68,7 +62,7 @@ PY
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
           echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
 
-      - name: Merge parts to LLM_MATERIALS.json
+      - name: Merge parts -> LLM_MATERIALS.json (and verify)
         run: |
           set -euo pipefail
           if [ ! -s parts/list.txt ]; then
@@ -88,7 +82,7 @@ PY
               markets: (M | unique_by(.market))
             }' $(cat parts/list.txt) > LLM_MATERIALS.json
           total=$(jq '.markets|length' LLM_MATERIALS.json)
-          echo "::notice title=Total merged markets::${total}"
+          echo "::notice title=Total merged markets::$total"
           [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
           ls -lh LLM_MATERIALS.json
 
