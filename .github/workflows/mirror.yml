@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE: "https://api.shenqn.uk"
-      CHUNK: "15"
+      CHUNK: "15"                 # 청크 크기(필요시 10/8로 줄여보세요)
       UA: "GA-mirror/1.1"
     steps:
       - uses: actions/checkout@v4
@@ -32,39 +32,69 @@ jobs:
           | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
-      - name: Fetch materials in chunks (with retries)
+      - name: Fetch materials in chunks (robust)
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
           mapfile -t ARR < markets.txt
           n=${#ARR[@]}
+          echo "::notice title=ChunkPlan::total=$n,size=${CHUNK}"
+
           i=0; idx=1
           while [ $i -lt $n ]; do
-            part=$(IFS=,; echo "${ARR[@]:i:CHUNK}")
+            # 안전한 콤마 조인
+            part=$(printf "%s," "${ARR[@]:i:CHUNK}"); part=${part%,}
             out="parts/part_${idx}.json"
+
+            echo "::group::fetch part_${idx}"
+            echo "markets=$(echo "$part" | tr ',' '\n' | wc -l)"
+
             ok=0
-            for attempt in 1 2 3 4 5 6; do
-              sleep 0.$((RANDOM%7))
+            for attempt in 1 2 3 4 5 6 7 8; do
+              # 지터 포함 백오프
+              delay=$(python - <<'PY' "$attempt")
+import random,sys
+base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][int(sys.argv[1])-1]
+print(base+random.uniform(0,0.7))
+PY
+              echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
+
               url="${BASE}/materials.json?mode=selected&full=1&markets=${part}"
-              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
-                         -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
-              echo "part_${idx} attempt=${attempt} HTTP=${code}"
+              code=$(curl -4sS \
+                        -H "User-Agent: ${UA}" \
+                        -H "Accept: application/json" \
+                        --retry 5 --retry-all-errors --retry-delay 2 \
+                        --connect-timeout 15 --max-time 60 \
+                        -w "%{http_code}" -o "$out.tmp" "$url" || true)
+              echo "HTTP=$code"
+
+              # 유효성 검사: markets 배열이 1개 이상
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
               fi
             done
-            [ "$ok" = "1" ] || { echo "::warning title=Chunk failed::part_${idx}"; rm -f "$out.tmp"; }
+
+            if [ "$ok" != "1" ]; then
+              echo "::warning title=ChunkFailed::part_${idx}"
+              rm -f "$out.tmp"
+            fi
+            echo "::endgroup::"
+
+            # 청크 사이 살짝 쉬어 upstream 부하 줄이기
+            sleep 1.2
             i=$((i+CHUNK)); idx=$((idx+1))
           done
-          ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
-          echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
 
-      - name: Merge parts → LLM_MATERIALS.json
+          ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
+          echo "::notice title=PartsFetched::$(wc -l < parts/list.txt || echo 0)"
+
+      - name: Merge parts → LLM_MATERIALS.json (and verify)
         run: |
           set -euo pipefail
           if [ ! -s parts/list.txt ]; then
             echo "::error title=No parts::No successful part files"; exit 1
           fi
+
           jq -s '
             def M: [.[].markets[]];
             {
@@ -78,8 +108,17 @@ jobs:
               ),
               markets: (M | unique_by(.market))
             }' $(cat parts/list.txt) > LLM_MATERIALS.json
-          jq '.meta.params.markets|length as $m | .markets|length as $n | {merged_markets:$n, meta_markets:$m}' LLM_MATERIALS.json
-          test "$(jq -r '.markets|length' LLM_MATERIALS.json)" -ge 60 || echo "::warning title=Low coverage::merged markets < 60"
+
+          total=$(jq '.markets|length' LLM_MATERIALS.json)
+          echo "::notice title=MergedMarkets::$total"
+          if [ "$total" -lt 60 ]; then
+            echo "::warning title=LowCoverage::merged<$total>"
+          fi
+
+          # 최종 형태 검증 (객체형 + 두 배열 존재)
+          jq -e 'type=="object" and (.markets|type=="array") and (.meta.params.markets|type=="array")' LLM_MATERIALS.json >/dev/null
+          ls -lh LLM_MATERIALS.json
+          head -c 200 LLM_MATERIALS.json || true
 
       - name: Commit if changed
         run: |
@@ -90,3 +129,11 @@ jobs:
           git diff --cached --quiet && { echo "No changes"; exit 0; }
           git commit -m "Update materials (chunked robust) $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           git push
+
+      - name: Upload parts (diagnostics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parts-json
+          path: parts/
+          retention-days: 3
