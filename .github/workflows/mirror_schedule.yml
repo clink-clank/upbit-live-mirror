@@ -1,0 +1,7 @@
+name: Mirror (schedule)
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes (UTC)
+jobs:
+  call-core:
+    uses: ./.github/workflows/mirror_core.yml

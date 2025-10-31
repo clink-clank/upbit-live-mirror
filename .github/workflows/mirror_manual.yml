@@ -1,0 +1,6 @@
+name: Mirror (manual)
+on:
+  workflow_dispatch: {}
+jobs:
+  call-core:
+    uses: ./.github/workflows/mirror_core.yml
