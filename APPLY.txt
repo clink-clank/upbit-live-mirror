@@ -1,0 +1,27 @@
+# Fix: 403 push failure (github-actions[bot]) on mirror_hot.yml
+
+## What changed
+- Added top-level:
+    permissions:
+      contents: write
+- Ensured pushes use explicit remote/branch: `git push origin HEAD:${GITHUB_REF_NAME:-main}`.
+- Left your logic intact.
+
+## How to apply
+```bash
+# From repo root
+unzip patch_mirror_hot_403_fix.zip -d .
+git add .github/workflows/mirror_hot.yml
+git commit -m "fix(ci): grant write perms to GITHUB_TOKEN for mirror_hot"
+git push origin main
+
+# (optional) re-run now
+gh workflow run mirror_hot.yml --ref main -f chunk=15
+gh run list --workflow=mirror_hot.yml -L 3
+```
+
+## If it still fails with 403
+- Go to GitHub → Repo Settings → Actions → General → Workflow permissions
+  - Select **"Read and write permissions"**
+  - (Optional) Enable "Allow GitHub Actions to create and approve pull requests"
+- Branch protection: allow GitHub Actions to push or require PR route instead.
