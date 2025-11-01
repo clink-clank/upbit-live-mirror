@@ -1,34 +1,55 @@
-name: Render Materials Snapshot
+name: Render Materials Snapshot (static HTML)
 
 on:
-  workflow_dispatch:
-  push:
-    paths:
-      - LLM_MATERIALS.json
-      - scripts/render_snapshot.sh
+  workflow_dispatch: {}
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"  # every 5 minutes
+
+permissions:
+  contents: write
+
+concurrency:
+  group: render-snapshot
+  cancel-in-progress: false
 
 jobs:
   render:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Render static snapshot
-        run: bash scripts/render_snapshot.sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Render snapshot (no JS)
+        run: |
+          set -euo pipefail
+          bash ./scripts/render_snapshot.sh
+
+      - name: Upload artifact (materials.html)
+        uses: actions/upload-artifact@v4
+        with:
+          name: materials_snapshot
+          path: docs/materials.html
+          retention-days: 3
+
       - name: Commit if changed
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- docs/materials.html docs/LLM_MATERIALS.pretty.json; then
-            git add docs/materials.html docs/LLM_MATERIALS.pretty.json
-            git commit -m "chore(snapshot): refresh static HTML"
-            git push
+          if ! git diff --quiet -- docs/materials.html; then
+            git add docs/materials.html
+            git commit -m "chore(snapshot): refresh docs/materials.html"
+            git pull --rebase origin main || true
+            git push origin HEAD:main
+            echo "::notice title=Commit::Pushed docs/materials.html"
           else
-            echo "No changes to commit"
+            echo "::notice title=Commit::No changes to commit"
           fi
