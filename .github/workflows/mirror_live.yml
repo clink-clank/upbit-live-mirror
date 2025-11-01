@@ -2,7 +2,7 @@ name: Mirror Live
 on:
   workflow_dispatch: {}
   push:
-    branches: [ main ]            # 수동 테스트용(빈 커밋으로도 실행 가능)
+    branches: [ main ]
   schedule:
     - cron: "*/5 * * * *"
 permissions:
@@ -20,15 +20,18 @@ jobs:
       UA: "GA-mirror/1.1"
     steps:
       - uses: actions/checkout@v4
+
       - name: Install jq
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
+
       - name: Build KRW market list (from Upbit)
         run: |
           set -euo pipefail
           curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+
       - name: Fetch materials in chunks
         run: |
           set -euo pipefail
@@ -57,6 +60,7 @@ PY
             i=$((i+CHUNK)); idx=$((idx+1))
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
+
       - name: Merge -> LLM_MATERIALS.json
         run: |
           set -euo pipefail
@@ -69,6 +73,7 @@ PY
               meta: ((.[0].meta // {}) | .params = (.params // {}) | .params.markets = (M|map(.market)|unique)),
               markets: (M | unique_by(.market))
             }' $(cat parts/list.txt) > LLM_MATERIALS.json
+
       - name: Commit if changed
         run: |
           set -euo pipefail
