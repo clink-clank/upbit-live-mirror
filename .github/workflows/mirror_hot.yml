@@ -10,6 +10,9 @@ on:
   schedule:
     - cron: "*/5 * * * *"
 
+permissions:
+  contents: write   # <- REQUIRED so the job can push commits
+
 jobs:
   mirror:
     runs-on: ubuntu-24.04
@@ -25,13 +28,13 @@ jobs:
       - name: Install jq
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
+          sudo apt-get install -y jq          
 
       - name: Build KRW market list (from Upbit public API)
         run: |
           set -euo pipefail
           curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" | jq -r '.[].market' | grep '^KRW-' > markets.txt
-          echo "::notice title=KRW markets::$(wc -l < markets.txt)"
+          echo "::notice title=KRW markets::$(wc -l < markets.txt)"          
 
       - name: Fetch materials in chunks (robust)
         run: |
@@ -60,7 +63,7 @@ jobs:
             i=$((i+CHUNK)); idx=$((idx+1))
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
-          echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"
+          echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"          
 
       - name: Validate parts (filter good/bad)
         run: |
@@ -84,7 +87,7 @@ jobs:
           if [ ! -s parts/valid_list.txt ]; then
             echo "::error title=No valid parts::All fetched parts failed validation"
             exit 5
-          fi
+          fi          
 
       - name: Merge parts → LLM_MATERIALS.json (and verify)
         run: |
@@ -107,9 +110,11 @@ jobs:
           total=$(jq '.markets|length' LLM_MATERIALS.json)
           echo "::notice title=Total merged markets::$total"
           [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
-          ls -lh LLM_MATERIALS.json
+          ls -lh LLM_MATERIALS.json          
 
       - name: Commit LLM_MATERIALS.json if changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -118,11 +123,11 @@ jobs:
             git add LLM_MATERIALS.json
             git commit -m "chore(mirror): update LLM_MATERIALS.json (hot)"
             git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-            git push
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}"
             echo "::notice title=Commit::Pushed updated LLM_MATERIALS.json"
           else
             echo "::notice title=Commit::No changes to commit"
-          fi
+          fi          
 
       - name: Build static HTML snapshot (docs/materials.html)
         run: |
@@ -132,12 +137,19 @@ jobs:
             def h(s): s|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;");
             . as $root |
             "<!doctype html><meta charset=\"utf-8\"><title>Upbit Materials Snapshot</title><style>body{font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;max-width:1100px}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.meta{color:#555}</style><h1>Upbit Materials Snapshot</h1><p class=meta>Generated: " + ($root.timestamps.kst // "") + " KST</p><pre>" + ( $root | tojson ) + "</pre>"
-          ' LLM_MATERIALS.json > docs/materials.html
+          ' LLM_MATERIALS.json > docs/materials.html          
 
       - name: Commit docs/materials.html
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git add docs/materials.html
-          git commit -m "chore(snapshot): refresh materials.html" || true
-          git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-          git push || true
+          if ! git diff --quiet -- docs/materials.html; then
+            git add docs/materials.html
+            git commit -m "chore(snapshot): refresh materials.html"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
+            echo "::notice title=Commit::Pushed docs/materials.html"
+          else
+            echo "::notice title=Commit::No changes to commit"
+          fi
