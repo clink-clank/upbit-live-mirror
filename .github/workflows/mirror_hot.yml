@@ -1,34 +1,19 @@
 name: Mirror Upbit Materials (hot, single-file + 10 shards)
-
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-
-permissions:
-  contents: write
-
+  push: { branches: [ main ] }
+permissions: { contents: write }
 jobs:
   mirror-hot:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # === 기존 파이프라인(전체 JSON 생성/검증/커밋 등)이 여기 들어갑니다 ===
-      # 예: LLM_MATERIALS.json 생성 스텝
-      # - name: Build LLM_MATERIALS.json
-      #   run: |
-      #     bash scripts/build_materials_hot.sh
-
-      # === 10분할 생성 ===
+      # (여기에 원래 LLM_MATERIALS.json 생성 스텝이 있어야 합니다)
       - name: Setup Python
         run: python3 -V
-
       - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
-        run: |
-          python3 scripts/split_llm_materials.py
-
+        run: python3 scripts/split_llm_materials.py
       - name: Commit and push shards
         run: |
           set -euo pipefail
@@ -42,7 +27,3 @@ jobs:
           else
             echo "::notice title=Commit::No shard changes"
           fi
-
-      # === 기존 HTML 스냅샷 등 후속 스텝이 있다면 아래에 계속 ===
-      # - name: Build static HTML snapshot (docs/materials.html)
-      #   run: bash scripts/build_snapshot.sh
