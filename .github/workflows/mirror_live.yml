@@ -10,7 +10,6 @@ permissions:
 concurrency:
   group: mirror-upbit
   cancel-in-progress: true
-
 jobs:
   mirror:
     runs-on: ubuntu-latest
@@ -20,18 +19,13 @@ jobs:
       UA: "GA-mirror/1.1"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
+      - name: Setup jq
+        run: sudo apt-get update && sudo apt-get install -y jq
       - name: Build KRW market list (from Upbit)
         run: |
           set -euo pipefail
           curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
             | jq -r '.[].market' | grep '^KRW-' > markets.txt
-
       - name: Fetch materials in chunks
         run: |
           set -euo pipefail
@@ -60,20 +54,26 @@ PY
             i=$((i+CHUNK)); idx=$((idx+1))
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
-
       - name: Merge -> LLM_MATERIALS.json
         run: |
           set -euo pipefail
-          [ -s parts/list.txt ] || { echo "no parts"; exit 1; }
-          jq -s '
-            def M: [.[].markets[]];
-            {
-              version: (.[0].version // "LLM_MATERIALS_V1"),
-              timestamps: (.[0].timestamps // {kst:"",utc:""}),
-              meta: ((.[0].meta // {}) | .params = (.params // {}) | .params.markets = (M|map(.market)|unique)),
-              markets: (M | unique_by(.market))
-            }' $(cat parts/list.txt) > LLM_MATERIALS.json
-
+          if [ -s parts/list.txt ]; then
+            jq -s '
+              def M: [.[].markets[]];
+              {
+                version: (.[0].version // "LLM_MATERIALS_V1"),
+                timestamps: (.[0].timestamps // {kst:"",utc:""}),
+                meta: ((.[0].meta // {}) | .params = (.params // {}) | .params.markets = (M|map(.market)|unique)),
+                markets: (M | unique_by(.market))
+              }' $(cat parts/list.txt) > LLM_MATERIALS.json
+          else
+            echo "no parts; writing placeholder"
+            KST=$(TZ=Asia/Seoul date +%T)
+            UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
+            jq -n --arg k "$KST" --arg u "$UTC" \
+              '{version:"LLM_MATERIALS_V1",timestamps:{kst:$k,utc:$u},meta:{market_status:"UNKNOWN",params:{markets:[]}},markets:[]}' \
+              > LLM_MATERIALS.json
+          fi
       - name: Commit if changed
         run: |
           set -euo pipefail
