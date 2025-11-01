@@ -1,33 +1,20 @@
 name: Mirror Core (single-file + 10 shards)
-
 on:
   workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
-
-permissions:
-  contents: write
-
+permissions: { contents: write }
 jobs:
   mirror-core:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # === 기존 코어 파이프라인(전체 JSON 생성/검증/커밋 등)이 여기 들어갑니다 ===
-      # - name: Build LLM_MATERIALS.json (core)
-      #   run: |
-      #     bash scripts/build_materials_core.sh
-
-      # === 10분할 생성 ===
+      # (여기에 원래 LLM_MATERIALS.json 생성 스텝이 있어야 합니다)
       - name: Setup Python
         run: python3 -V
-
       - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
-        run: |
-          python3 scripts/split_llm_materials.py
-
+        run: python3 scripts/split_llm_materials.py
       - name: Commit and push shards
         run: |
           set -euo pipefail
