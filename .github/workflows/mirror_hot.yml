@@ -4,23 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       chunk:
-        description: "Chunk size"
+        description: "Markets per chunk"
         required: false
         default: "15"
-
-permissions:
-  contents: write
+  schedule:
+    - cron: "*/5 * * * *"  # 5분마다 자동 실행
 
 jobs:
   mirror:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      BASE: https://api.shenqn.uk
       UA: GA-mirror/1.1
-      CHUNK: ${{ github.event.inputs.chunk || 15 }}
+      BASE: https://api.shenqn.uk
+      CHUNK: ${{ github.event.inputs.chunk || '15' }}
     steps:
-      - name: Run actions/checkout@v4
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
@@ -33,8 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
-            | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks (robust)
@@ -97,7 +94,6 @@ jobs:
         run: |
           set -euo pipefail
           files=$(cat parts/valid_list.txt)
-          # Build using only valid files; derive headers from the first valid one
           jq -s '
             def valid: type=="object" and (.markets|type=="array");
             def GOOD: [ .[] | select(valid) ];
@@ -117,17 +113,46 @@ jobs:
           [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
           ls -lh LLM_MATERIALS.json
 
-      - name: Commit if changed
+      - name: Build static HTML snapshot (docs/materials.html)
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
+          mkdir -p docs
+          cat > docs/materials.html <<'HTML'
+<!doctype html>
+<meta charset="utf-8">
+<title>Upbit Materials Snapshot</title>
+<style>
+  body{font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;max-width:1100px}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .meta{color:#555}
+  details{margin-top:12px}
+</style>
+<h1>Upbit Materials Snapshot</h1>
+<p class="meta">Source JSON: <a href="https://raw.githubusercontent.com/clink-clank/upbit-live-mirror/main/LLM_MATERIALS.json">LLM_MATERIALS.json</a></p>
+<hr>
+HTML
+          printf '<h3>Summary</h3><pre class="meta">' >> docs/materials.html
+          jq -r '"version: \(.version // "N/A")
+updated_kst: \(.timestamps.kst // "N/A")
+updated_utc: \(.timestamps.utc // "N/A")
+markets: \((.markets|length)//0)"' LLM_MATERIALS.json             | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' >> docs/materials.html
+          printf '</pre>\n<details open><summary>Raw JSON (pretty)</summary>\n<pre>' >> docs/materials.html
+          jq . LLM_MATERIALS.json | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' >> docs/materials.html
+          printf '</pre></details>' >> docs/materials.html
+
+      - name: Commit if changed (safe pull-rebase to avoid push race)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- LLM_MATERIALS.json; then
-            git add LLM_MATERIALS.json
-            git commit -m "chore(mirror): update LLM_MATERIALS.json (hot)"
+          git pull --rebase --autostash origin main || true
+          if ! git diff --quiet -- LLM_MATERIALS.json docs/materials.html; then
+            git add LLM_MATERIALS.json docs/materials.html
+            git commit -m "chore(mirror): update LLM_MATERIALS.json & docs/materials.html (hot)"
             git push
-            echo "::notice title=Commit::Pushed updated LLM_MATERIALS.json"
+            echo "::notice title=Commit::Pushed updated files"
           else
             echo "::notice title=Commit::No changes to commit"
           fi
