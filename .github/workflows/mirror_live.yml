@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE: "https://api.shenqn.uk"
-      CHUNK: 15
+      CHUNK: 10
       UA: "GA-mirror/1.1"
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +51,7 @@ PY
               sleep "$delay"
               url="${BASE}/materials.json?mode=selected&full=1&markets=${part}"
               code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
-                -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
+                -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
               fi
