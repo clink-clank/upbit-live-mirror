@@ -4,30 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       chunk:
-        description: "Chunk size (number of markets per request)"
+        description: "Markets per chunk"
         required: false
         default: "15"
   schedule:
-    - cron: "*/5 * * * *"  # every 5 minutes
-
-permissions:
-  contents: write
-
-concurrency:
-  group: mirror-hot
-  cancel-in-progress: false
-
-env:
-  UA: GA-mirror/1.1
-  BASE: https://api.shenqn.uk
+    - cron: "*/5 * * * *"
 
 jobs:
   mirror:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    env:
+      UA: GA-mirror/1.1
+      BASE: https://api.shenqn.uk
+      CHUNK: ${{ github.event.inputs.chunk || '15' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
@@ -37,13 +28,10 @@ jobs:
           sudo apt-get install -y jq
 
       - name: Build KRW market list (from Upbit public API)
-        env:
-          CHUNK: ${{ github.event.inputs.chunk || '15' }}
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
-          echo "CHUNK=$CHUNK" >> $GITHUB_ENV
 
       - name: Fetch materials in chunks (robust)
         run: |
@@ -59,10 +47,7 @@ jobs:
             out="parts/part_${idx}.json"
             ok=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(python3 - <<'PY'
-import random,sys;a=int(sys.argv[1]);base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1];print(base+random.uniform(0,0.7))
-PY
-              "$attempt")
+              delay=$(python3 -c 'import random,sys;a=int(sys.argv[1]);base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1];print(base+random.uniform(0,0.7))' "$attempt")
               echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
               url="${BASE}/materials.json?mode=selected&full=1&markets=${enc_part}"
               code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
@@ -124,14 +109,7 @@ PY
           [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
           ls -lh LLM_MATERIALS.json
 
-      - name: Upload artifact (LLM_MATERIALS.json)
-        uses: actions/upload-artifact@v4
-        with:
-          name: LLM_MATERIALS.json
-          path: LLM_MATERIALS.json
-          retention-days: 3
-
-      - name: Commit if changed
+      - name: Commit LLM_MATERIALS.json if changed
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -139,10 +117,27 @@ PY
           if ! git diff --quiet -- LLM_MATERIALS.json; then
             git add LLM_MATERIALS.json
             git commit -m "chore(mirror): update LLM_MATERIALS.json (hot)"
-            # avoid rejected push due to remote updates
-            git pull --rebase origin main || true
-            git push origin HEAD:main
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push
             echo "::notice title=Commit::Pushed updated LLM_MATERIALS.json"
           else
             echo "::notice title=Commit::No changes to commit"
           fi
+
+      - name: Build static HTML snapshot (docs/materials.html)
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          jq -r '
+            def h(s): s|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;");
+            . as $root |
+            "<!doctype html><meta charset=\"utf-8\"><title>Upbit Materials Snapshot</title><style>body{font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;max-width:1100px}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.meta{color:#555}</style><h1>Upbit Materials Snapshot</h1><p class=meta>Generated: " + ($root.timestamps.kst // "") + " KST</p><pre>" + ( $root | tojson ) + "</pre>"
+          ' LLM_MATERIALS.json > docs/materials.html
+
+      - name: Commit docs/materials.html
+        run: |
+          set -euo pipefail
+          git add docs/materials.html
+          git commit -m "chore(snapshot): refresh materials.html" || true
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+          git push || true
