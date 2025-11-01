@@ -1,0 +1,39 @@
+name: mirror-to-gist
+on:
+  push:
+    branches: [ main ]           # 소스 변경 시 자동 갱신
+    paths:
+      - LLM_MATERIALS.json
+  schedule:
+    - cron: "*/10 * * * *"       # 선택: 10분마다 동기화(소스가 외부에 의해 갱신될 때)
+  workflow_dispatch: {}           # 수동 실행 버튼
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # (선택) JSON 최소화: 크기↓ / 전송안정성↑
+      - name: Minify JSON
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          jq -c . LLM_MATERIALS.json > LLM_MATERIALS.min.json
+
+      - name: Build Gist payload
+        run: |
+          jq -n --argjson content "$(jq -Rs . < LLM_MATERIALS.min.json)" \
+            '{files: {"LLM_MATERIALS.json": {content: $content}}}' > payload.json
+          echo "Payload bytes: $(wc -c < payload.json)"
+
+      - name: PATCH Gist
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          curl -sS -X PATCH \
+            -H "Authorization: token ${GIST_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/gists/${GIST_ID} \
+            --data @payload.json \
+            | jq -r '.updated_at, .html_url' || true
