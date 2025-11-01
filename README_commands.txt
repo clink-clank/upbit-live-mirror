@@ -24,3 +24,6 @@ gh api -X PUT  repos/clink-clank/upbit-live-mirror/pages -f "source[branch]=main
 # 5) 확인
 echo "OPEN  https://clink-clank.github.io/upbit-live-mirror/materials.html"
 echo "RAW   https://raw.githubusercontent.com/clink-clank/upbit-live-mirror/main/LLM_MATERIALS.json"
+
+# Updated at 2025-11-01 10:25:29
+
