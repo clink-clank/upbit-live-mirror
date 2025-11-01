@@ -1,5 +1,4 @@
 name: Mirror Upbit Materials (hot, single-file)
-
 on:
   workflow_dispatch:
     inputs:
@@ -8,11 +7,13 @@ on:
         required: false
         default: "15"
   schedule:
-    - cron: "*/5 * * * *"  # 5분마다 자동 실행
+    - cron: "*/5 * * * *"  # every 5 minutes
 
 jobs:
   mirror:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     env:
       UA: GA-mirror/1.1
       BASE: https://api.shenqn.uk
@@ -49,7 +50,13 @@ jobs:
             out="parts/part_${idx}.json"
             ok=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(python3 -c 'import random,sys;a=int(sys.argv[1]);base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1];print(base+random.uniform(0,0.7))' "$attempt")
+              delay=$(python3 - <<'PY' "$attempt"
+import random,sys
+a=int(sys.argv[1])
+base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1]
+print(base+random.uniform(0,0.7))
+PY
+)
               echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
               url="${BASE}/materials.json?mode=selected&full=1&markets=${enc_part}"
               code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
@@ -118,41 +125,41 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p docs
-          cat > docs/materials.html <<'HTML'
-<!doctype html>
+          python3 - <<'PY'
+import json,html,os
+data=json.load(open('LLM_MATERIALS.json','r',encoding='utf-8'))
+s=json.dumps(data, ensure_ascii=False, indent=2)
+os.makedirs('docs', exist_ok=True)
+with open('docs/materials.html','w',encoding='utf-8') as f:
+    f.write('''<!doctype html>
 <meta charset="utf-8">
 <title>Upbit Materials Snapshot</title>
 <style>
-  body{font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;max-width:1100px}
-  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  .meta{color:#555}
-  details{margin-top:12px}
+ body{font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;max-width:1100px}
+ pre{white-space:pre-wrap;word-wrap:break-word}
+ .meta{color:#555;margin-bottom:16px}
+ a{ text-decoration:none }
 </style>
-<h1>Upbit Materials Snapshot</h1>
-<p class="meta">Source JSON: <a href="https://raw.githubusercontent.com/clink-clank/upbit-live-mirror/main/LLM_MATERIALS.json">LLM_MATERIALS.json</a></p>
-<hr>
-HTML
-          printf '<h3>Summary</h3><pre class="meta">' >> docs/materials.html
-          jq -r '"version: \(.version // "N/A")
-updated_kst: \(.timestamps.kst // "N/A")
-updated_utc: \(.timestamps.utc // "N/A")
-markets: \((.markets|length)//0)"' LLM_MATERIALS.json             | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' >> docs/materials.html
-          printf '</pre>\n<details open><summary>Raw JSON (pretty)</summary>\n<pre>' >> docs/materials.html
-          jq . LLM_MATERIALS.json | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' >> docs/materials.html
-          printf '</pre></details>' >> docs/materials.html
+<h1>Upbit KRW Markets — Materials Snapshot</h1>
+<p class="meta">Source: LLM_MATERIALS.json (auto-updated every 5m). This is a static HTML (no JS).</p>
+<p><a href="https://raw.githubusercontent.com/${{ github.repository }}/main/LLM_MATERIALS.json">Download JSON</a></p>
+<pre>''')
+    f.write(html.escape(s))
+    f.write("</pre>")
+PY
+          echo "Built docs/materials.html ($(wc -c < docs/materials.html) bytes)"
 
-      - name: Commit if changed (safe pull-rebase to avoid push race)
+      - name: Commit if changed
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase --autostash origin main || true
           if ! git diff --quiet -- LLM_MATERIALS.json docs/materials.html; then
             git add LLM_MATERIALS.json docs/materials.html
-            git commit -m "chore(mirror): update LLM_MATERIALS.json & docs/materials.html (hot)"
+            git commit -m "chore(mirror): update LLM_MATERIALS.json & materials.html"
             git push
-            echo "::notice title=Commit::Pushed updated files"
+            echo "::notice title=Commit::Pushed updated materials"
           else
             echo "::notice title=Commit::No changes to commit"
           fi
