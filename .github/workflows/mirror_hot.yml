@@ -1,155 +1,48 @@
-name: Mirror Upbit Materials (hot, single-file)
+name: Mirror Upbit Materials (hot, single-file + 10 shards)
 
 on:
   workflow_dispatch:
-    inputs:
-      chunk:
-        description: "Markets per chunk"
-        required: false
-        default: "15"
-  schedule:
-    - cron: "*/5 * * * *"
+  push:
+    branches: [ main ]
 
 permissions:
-  contents: write   # <- REQUIRED so the job can push commits
+  contents: write
 
 jobs:
-  mirror:
-    runs-on: ubuntu-24.04
-    env:
-      UA: GA-mirror/1.1
-      BASE: https://api.shenqn.uk
-      CHUNK: ${{ github.event.inputs.chunk || '15' }}
+  mirror-hot:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install jq
+      # === 기존 파이프라인(전체 JSON 생성/검증/커밋 등)이 여기 들어갑니다 ===
+      # 예: LLM_MATERIALS.json 생성 스텝
+      # - name: Build LLM_MATERIALS.json
+      #   run: |
+      #     bash scripts/build_materials_hot.sh
+
+      # === 10분할 생성 ===
+      - name: Setup Python
+        run: python3 -V
+
+      - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq          
+          python3 scripts/split_llm_materials.py
 
-      - name: Build KRW market list (from Upbit public API)
-        run: |
-          set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" | jq -r '.[].market' | grep '^KRW-' > markets.txt
-          echo "::notice title=KRW markets::$(wc -l < markets.txt)"          
-
-      - name: Fetch materials in chunks (robust)
-        run: |
-          set -euo pipefail
-          rm -rf parts && mkdir -p parts
-          mapfile -t ARR < markets.txt
-          n=${#ARR[@]}
-          echo "::group::Chunk plan"; echo "total_markets=$n  chunk_size=$CHUNK"; echo "::endgroup::"
-          i=0; idx=1
-          while [ $i -lt $n ]; do
-            part=$(IFS=,; printf "%s" "${ARR[*]:i:CHUNK}")
-            enc_part=$(printf '%s' "$part" | jq -sRr @uri)
-            out="parts/part_${idx}.json"
-            ok=0
-            for attempt in 1 2 3 4 5 6 7 8; do
-              delay=$(python3 -c 'import random,sys;a=int(sys.argv[1]);base=[0.0,0.6,1.0,1.7,3.0,5.0,8.0,13.0][a-1];print(base+random.uniform(0,0.7))' "$attempt")
-              echo "attempt=$attempt sleep=${delay}s"; sleep "$delay"
-              url="${BASE}/materials.json?mode=selected&full=1&markets=${enc_part}"
-              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" -w "%{http_code}" -o "$out.tmp" --max-time 40 "$url" || true)
-              echo "HTTP=$code"
-              if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
-                mv "$out.tmp" "$out"; ok=1; break
-              fi
-            done
-            [ "$ok" = "1" ] || { echo "::warning title=Chunk failed::part_${idx}"; rm -f "$out.tmp"; }
-            i=$((i+CHUNK)); idx=$((idx+1))
-          done
-          ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
-          echo "::notice title=Parts fetched::$(wc -l < parts/list.txt || echo 0)"          
-
-      - name: Validate parts (filter good/bad)
-        run: |
-          set -euo pipefail
-          : > parts/valid_list.txt
-          : > parts/invalid_list.txt
-          if [ -s parts/list.txt ]; then
-            while read -r f; do
-              if jq -e '(.markets|type=="array") and (.markets|length>=1)' "$f" >/dev/null 2>&1; then
-                echo "$f" >> parts/valid_list.txt
-              else
-                echo "$f" >> parts/invalid_list.txt
-              fi
-            done < parts/list.txt
-          fi
-          echo "::notice title=Valid parts::$(wc -l < parts/valid_list.txt || echo 0)"
-          if [ -s parts/invalid_list.txt ]; then
-            echo "::warning title=Invalid parts (showing up to 5)::$(wc -l < parts/invalid_list.txt)"
-            sed -n '1,5p' parts/invalid_list.txt
-          fi
-          if [ ! -s parts/valid_list.txt ]; then
-            echo "::error title=No valid parts::All fetched parts failed validation"
-            exit 5
-          fi          
-
-      - name: Merge parts → LLM_MATERIALS.json (and verify)
-        run: |
-          set -euo pipefail
-          files=$(cat parts/valid_list.txt)
-          jq -s '
-            def valid: type=="object" and (.markets|type=="array");
-            def GOOD: [ .[] | select(valid) ];
-            def M: [ GOOD[] | .markets[] ];
-            def FIRST: (GOOD | first) // {};
-            {
-              version:    (FIRST.version // "LLM_MATERIALS_V1"),
-              timestamps: (FIRST.timestamps // {kst:"",utc:""}),
-              meta: (
-                (FIRST.meta // {}) as $m
-                | ($m + {params: (($m.params // {}) + {markets: (M | map(.market) | unique)})})
-              ),
-              markets: (M | unique_by(.market))
-            }' $files > LLM_MATERIALS.json
-          total=$(jq '.markets|length' LLM_MATERIALS.json)
-          echo "::notice title=Total merged markets::$total"
-          [ "$total" -ge 60 ] || echo "::warning title=Low coverage::merged markets=$total (<60)"
-          ls -lh LLM_MATERIALS.json          
-
-      - name: Commit LLM_MATERIALS.json if changed
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push shards
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- LLM_MATERIALS.json; then
-            git add LLM_MATERIALS.json
-            git commit -m "chore(mirror): update LLM_MATERIALS.json (hot)"
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-            git push origin HEAD:"${GITHUB_REF_NAME:-main}"
-            echo "::notice title=Commit::Pushed updated LLM_MATERIALS.json"
+          git add materials_10/*.json || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(hot): update materials shards (10)"
+            git push
+            echo "::notice title=Commit::Pushed materials_10 shards"
           else
-            echo "::notice title=Commit::No changes to commit"
-          fi          
-
-      - name: Build static HTML snapshot (docs/materials.html)
-        run: |
-          set -euo pipefail
-          mkdir -p docs
-          jq -r '
-            def h(s): s|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;");
-            . as $root |
-            "<!doctype html><meta charset=\"utf-8\"><title>Upbit Materials Snapshot</title><style>body{font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;max-width:1100px}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.meta{color:#555}</style><h1>Upbit Materials Snapshot</h1><p class=meta>Generated: " + ($root.timestamps.kst // "") + " KST</p><pre>" + ( $root | tojson ) + "</pre>"
-          ' LLM_MATERIALS.json > docs/materials.html          
-
-      - name: Commit docs/materials.html
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if ! git diff --quiet -- docs/materials.html; then
-            git add docs/materials.html
-            git commit -m "chore(snapshot): refresh materials.html"
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
-            echo "::notice title=Commit::Pushed docs/materials.html"
-          else
-            echo "::notice title=Commit::No changes to commit"
+            echo "::notice title=Commit::No shard changes"
           fi
+
+      # === 기존 HTML 스냅샷 등 후속 스텝이 있다면 아래에 계속 ===
+      # - name: Build static HTML snapshot (docs/materials.html)
+      #   run: bash scripts/build_snapshot.sh
