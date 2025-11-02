@@ -17,5 +17,5 @@ jobs:
 
   call:
     needs: warmup
-    uses: clink-clank/upbit-live-mirror/.github/workflows/mirror_live_v11.yml@main
+    uses: ./.github/workflows/mirror_live_v11.yml
     secrets: inherit
