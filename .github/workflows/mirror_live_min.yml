@@ -1,0 +1,8 @@
+name: Mirror Live MIN
+on: { workflow_dispatch: {}, schedule: [{ cron: "*/5 * * * *" }] }
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "mirror minimal ok"

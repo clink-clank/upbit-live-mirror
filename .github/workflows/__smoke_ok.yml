@@ -1,0 +1,3 @@
+name: __SMOKE_OK
+on: { workflow_dispatch: {}, schedule: [{ cron: "*/5 * * * *" }] }
+jobs: { ping: { runs-on: ubuntu-24.04, steps: [ { run: "echo ok" } ] } }
