@@ -1,0 +1,21 @@
+name: Rn Now (live v11)
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concrrency:
+  grop: mirror-pit-v11-wrapper
+  cancel-in-progress: tre
+
+jos:
+  warmp:
+    rns-on: nt-4.4
+    steps:
+      - rn: echo "Wrapper warmp OK"
+
+  call:
+    needs: warmp
+    ses: ./.gith/workflows/mirror_live_v11.yml
+    secrets: inherit
