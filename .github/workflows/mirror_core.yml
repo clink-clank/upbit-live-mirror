@@ -1,29 +1,38 @@
-name: Mirror Core (single-file + 10 shards)
+name: Mirror Core (single-file + shards)
+
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   schedule:
     - cron: "*/15 * * * *"
-permissions: { contents: write }
+
+permissions:
+  contents: write
+
 jobs:
   mirror-core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      # (여기에 원래 LLM_MATERIALS.json 생성 스텝이 있어야 합니다)
-      - name: Setup Python
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      # (assumes upstream steps produce LLM_MATERIALS.json)
+      - name: Ensure Python
         run: python3 -V
-      - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
-        run: python3 scripts/split_llm_materials.py
-      - name: Commit and push shards
+
+      - name: Generate & commit 10 shards (materials_10/)
         run: |
           set -euo pipefail
+          chmod +x scripts/split_llm_materials.py || true
+          python3 scripts/split_llm_materials.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add materials_10/*.json || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(core): update materials shards (10)"
-            git push
+          if ! git diff --quiet -- materials_10/; then
+            git add materials_10/*.json || true
+            git commit -m "chore(core): update materials_10 shards (10)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
             echo "::notice title=Commit::Pushed materials_10 shards"
           else
             echo "::notice title=Commit::No shard changes"
