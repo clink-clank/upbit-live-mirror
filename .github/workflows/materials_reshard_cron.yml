@@ -1,0 +1,46 @@
+name: Materials Reshard (5m)
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materials-reshard-cron
+  cancel-in-progress: false
+
+env:
+  RESHARD_N: "12"
+
+jobs:
+  reshard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          jq --version
+      - name: Run reshard (N=${{ env.RESHARD_N }})
+        run: |
+          bash scripts/materials_reshard_v3.sh . "${RESHARD_N}" ""
+      - name: Commit shards if changed
+        run: |
+          set -euo pipefail
+          DIR="materials_${RESHARD_N}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- "${DIR}"; then
+            git add "${DIR}"
+            git commit -m "chore(hot): update materials shards (${RESHARD_N})"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
+          else
+            echo "::notice title=Commit::No changes in ${DIR}"
+          fi
