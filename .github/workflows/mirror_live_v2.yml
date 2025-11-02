@@ -30,7 +30,8 @@ jobs:
       - name: Build KRW market list (from Upbit)
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
+            | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks
@@ -46,7 +47,8 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8; do
               sleep 0.8
               url="${BASE}/materials.json?mode=selected&full=1&markets=${enc_part}"
-              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
+              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" -w "%{http_code}" \
+                     -o "$out.tmp" --max-time 60 "$url" || true)
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
               fi
@@ -96,7 +98,30 @@ jobs:
       - name: Generate & commit 10 shards (materials_10/)
         run: |
           set -euo pipefail
-          python3 scripts/split_llm_materials.py
+          python3 <<'PY'
+import json, os, math, pathlib
+root = pathlib.Path(".")
+infile = root / "LLM_MATERIALS.json"
+outdir = root / "materials_10"
+outdir.mkdir(parents=True, exist_ok=True)
+data = json.loads(infile.read_text(encoding="utf-8"))
+mkts = data.get("markets", [])
+n = len(mkts)
+if n==0:
+    raise SystemExit("no markets")
+k = 10
+size = math.ceil(n/k)
+for i in range(k):
+    part = mkts[i*size:(i+1)*size]
+    (outdir / f"LLM_MATERIALS_part_{i:02d}.json").write_text(
+        json.dumps({"version": data.get("version"),
+                    "timestamps": data.get("timestamps"),
+                    "meta": data.get("meta"),
+                    "markets": part}, ensure_ascii=False), encoding="utf-8")
+(root / "materials_10" / "index.json").write_text(
+    json.dumps({"count": n, "parts": k, "size": size}, ensure_ascii=False), encoding="utf-8")
+print(f"Split {n} markets into 10 shard files in {outdir.resolve()}")
+PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet -- materials_10/; then
