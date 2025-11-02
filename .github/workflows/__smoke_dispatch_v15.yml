@@ -1,0 +1,11 @@
+name: __SMOKE_DISPATCH_V15
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ping:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: echo-ok
+        run: echo "smoke ok"
