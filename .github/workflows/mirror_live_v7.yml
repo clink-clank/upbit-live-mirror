@@ -1,4 +1,4 @@
-name: Mirror Live v7
+name: Mirror Live v7 
 on:
   workflow_dispatch: {}
   schedule:
