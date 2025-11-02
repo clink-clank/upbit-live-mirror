@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      UA: GA-mirror/1.1
-      BASE: https://api.shenqn.uk
+      UA: "GA-mirror/1.1"
+      BASE: "https://api.shenqn.uk"
       CHUNK: "10"
     steps:
       - uses: actions/checkout@v4
@@ -124,10 +124,10 @@ for i in range(shards):
     start = i*size
     end = min((i+1)*size, n)
     part = {"index": i, "total": shards, "count": end-start, "markets": markets[start:end]}
-    with open(os.path.join(out_dir, f"LLM_MATERIALS_part_{i:02d}.json"), "w", encoding="utf-8") as w:
-        json.dump(part, w, ensure_ascii=False)
-with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as w:
-    json.dump({"total": shards, "count": n}, w, ensure_ascii=False)
+    with open(os.path.join(out_dir, f"LLM_MATERIALS_part_{i:02d}.json"), "w", encoding="utf-8") as o:
+        json.dump(part, o, ensure_ascii=False)
+with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as o:
+    json.dump({"total": shards, "count": n}, o, ensure_ascii=False)
 PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
