@@ -1,42 +1,41 @@
-name: Mirror Core (single-file + 10 shards)
+name: Mirror Core (single-file + shards)
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+  workflow_call: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: mirror-core
+  cancel-in-progress: true
+
 jobs:
-  mirror-core:
-    runs-on: ubuntu-latest
+  core:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
-      # === 기존 코어 파이프라인(전체 JSON 생성/검증/커밋 등)이 여기 들어갑니다 ===
-      # - name: Build LLM_MATERIALS.json (core)
-      #   run: |
-      #     bash scripts/build_materials_core.sh
+      # (여기: 코어 파이프라인이 LLM_MATERIALS.json을 산출해야 합니다)
 
-      # === 10분할 생성 ===
-      - name: Setup Python
+      - name: Ensure Python
         run: python3 -V
 
-      - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
-        run: |
-          python3 scripts/split_llm_materials.py
-
-      - name: Commit and push shards
+      - name: Generate & commit 10 shards (materials_10/)
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
+          python3 scripts/split_llm_materials.py
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add materials_10/*.json || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(core): update materials shards (10)"
-            git push
+          if ! git diff --quiet -- materials_10/; then
+            git add materials_10/*.json || true
+            git commit -m "chore(core): update materials_10 shards"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
             echo "::notice title=Commit::Pushed materials_10 shards"
           else
             echo "::notice title=Commit::No shard changes"

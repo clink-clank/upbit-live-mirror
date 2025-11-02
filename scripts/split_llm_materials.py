@@ -46,16 +46,7 @@ for i in range(k):
     )
     index.append({"file": name, "index": i, "count": len(shard)})
 
-# 색인 파일
-idx = {
-    "source": "LLM_MATERIALS.json",
-    "total_markets": n,
-    "shards": index,
-    "total_shards": len(index),
-}
-(DST / "index.json").write_text(
-    json.dumps(idx, ensure_ascii=False, separators=(",", ":")),
-    encoding="utf-8",
-)
-
+# 색인
+idx = {"source": "LLM_MATERIALS.json", "total_markets": n, "shards": index, "total_shards": len(index)}
+(DST / "index.json").write_text(json.dumps(idx, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 print(f"Split {n} markets into {len(index)} shard files in {DST}")

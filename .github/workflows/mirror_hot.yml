@@ -1,48 +1,43 @@
-name: Mirror Upbit Materials (hot, single-file + 10 shards)
+name: Mirror Upbit Materials (hot, single-file + shards)
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
+  workflow_dispatch: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: mirror-hot
+  cancel-in-progress: true
+
 jobs:
-  mirror-hot:
-    runs-on: ubuntu-latest
+  hot:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
-      # === 기존 파이프라인(전체 JSON 생성/검증/커밋 등)이 여기 들어갑니다 ===
-      # 예: LLM_MATERIALS.json 생성 스텝
-      # - name: Build LLM_MATERIALS.json
-      #   run: |
-      #     bash scripts/build_materials_hot.sh
+      # (여기: LLM_MATERIALS.json 생성/커밋 스텝이 있어야 함)
+      # - name: Build & commit LLM_MATERIALS.json
+      #   run: bash scripts/build_materials_hot.sh
 
-      # === 10분할 생성 ===
-      - name: Setup Python
+      - name: Ensure Python
         run: python3 -V
 
-      - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
-        run: |
-          python3 scripts/split_llm_materials.py
-
-      - name: Commit and push shards
+      - name: Generate & commit 10 shards (materials_10/)
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
+          python3 scripts/split_llm_materials.py
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add materials_10/*.json || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(hot): update materials shards (10)"
-            git push
+          if ! git diff --quiet -- materials_10/; then
+            git add materials_10/*.json || true
+            git commit -m "chore(hot): update materials_10 shards"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
             echo "::notice title=Commit::Pushed materials_10 shards"
           else
             echo "::notice title=Commit::No shard changes"
           fi
-
-      # === 기존 HTML 스냅샷 등 후속 스텝이 있다면 아래에 계속 ===
-      # - name: Build static HTML snapshot (docs/materials.html)
-      #   run: bash scripts/build_snapshot.sh
