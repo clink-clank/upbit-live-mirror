@@ -1,4 +1,4 @@
-name: Mirror Live v2
+name: Mirror Live v3
 on:
   workflow_dispatch: {}
   schedule:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: mirror-upbit-v2
+  group: mirror-upbit-v3
   cancel-in-progress: false
 jobs:
   mirror:
@@ -92,7 +92,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet -- LLM_MATERIALS.json; then
             git add LLM_MATERIALS.json
-            git commit -m "chore(live): update LLM_MATERIALS.json (v2)"
+            git commit -m "chore(live): update LLM_MATERIALS.json (v3)"
             git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
             git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
           else
@@ -128,7 +128,7 @@ PY
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet -- materials_10/; then
             git add materials_10/*.json || true
-            git commit -m "chore(live): update materials_10 shards (v2)"
+            git commit -m "chore(live): update materials_10 shards (v3)"
             git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
             git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
           else
