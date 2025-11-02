@@ -1,6 +1,7 @@
 name: Mirror Live
 on:
   workflow_dispatch: {}
+  workflow_dispatch: {}
   push:
     branches: [ main ]
   schedule:
