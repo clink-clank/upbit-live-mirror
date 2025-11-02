@@ -18,16 +18,12 @@ jobs:
       CHUNK: "10"
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
-
+        with: { fetch-depth: 0, persist-credentials: true }
       - name: Setup jq and Python
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
           python3 -V
-
       - name: Build KRW market list (from Upbit)
         shell: bash
         run: |
@@ -35,7 +31,6 @@ jobs:
           curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
             | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
-
       - name: Fetch materials in chunks
         shell: bash
         run: |
@@ -60,7 +55,6 @@ jobs:
             i=$((i+CHUNK)); idx=$((idx+1))
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
-
       - name: Merge -> LLM_MATERIALS.json
         shell: bash
         run: |
@@ -84,7 +78,6 @@ jobs:
           else
             echo "::error::No part files"; exit 1
           fi
-
       - name: Commit LLM_MATERIALS.json if changed
         shell: bash
         run: |
@@ -99,7 +92,6 @@ jobs:
           else
             echo "::notice title=Commit::No changes"
           fi
-
       - name: Generate & commit 10 shards (materials_10/)
         shell: bash
         run: |
@@ -119,11 +111,9 @@ for i in range(shards):
     start = i*size
     end = min((i+1)*size, n)
     part = {"index": i, "total": shards, "count": end-start, "markets": markets[start:end]}
-    with open(os.path.join(out_dir, f"LLM_MATERIALS_part_{i:02d}.json"), "w", encoding="utf-8") as wf:
-        json.dump(part, wf, ensure_ascii=False, indent=2)
-with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as wf:
-    json.dump({"total": shards, "size": size, "count": n}, wf, ensure_ascii=False, indent=2)
-print(f"Split {n} markets into {shards} shard files in {os.path.abspath(out_dir)}")
+    with open(os.path.join(out_dir, f"part_{i+1}.json"), "w", encoding="utf-8") as w:
+        json.dump(part, w, ensure_ascii=False)
+print(f"Split {n} markets into {shards} shard files in {out_dir}")
 PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
