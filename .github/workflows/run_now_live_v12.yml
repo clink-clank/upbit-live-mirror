@@ -1,0 +1,22 @@
+name: Run Now (live v12)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-upbit-wrapper-v12
+  cancel-in-progress: false
+
+jobs:
+  warmup:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Wrapper warmup OK"
+
+  call_core:
+    needs: warmup
+    uses: ./.github/workflows/mirror_live_core_v12.yml
+    secrets: inherit
