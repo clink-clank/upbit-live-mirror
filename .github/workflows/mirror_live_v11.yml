@@ -1,143 +1,138 @@
 name: Mirror Live v11
 on:
-  workflow_dispatch: {}
-  schedle:
+  schedule:
     - cron: "*/5 * * * *"
+  repository_dispatch:
+    types: [mirror_live_v11]
   workflow_call: {}
 
 permissions:
   contents: write
 
-concrrency:
-  grop: mirror-pit-v11
-  cancel-in-progress: tre
+concurrency:
+  group: mirror-upbit-v11-core
+  cancel-in-progress: false
 
-jos:
+jobs:
   mirror:
-    rns-on: nt-4.4
-    timeot-mintes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       UA: "GA-mirror/1.1"
-      BASE: "https://api.shenqn.k"
-      CHUNK: "1"
+      BASE: "https://api.shenqn.uk"
+      CHUNK: "10"
     steps:
-      - ses: actions/checkot@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 
-          persist-credentials: tre
+          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Setp jq and Python
-        rn: |
-          sdo apt-get pdate
-          sdo apt-get install -y jq
+      - name: Setup jq and Python
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq
           python3 -V
 
-      - name: Bild KRW market list (from Upit)
-        shell: ash
-        rn: |
-          set -eo pipefail
-          crl -4fsSL "https://api.pit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
+      - name: Build KRW market list (from Upbit)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: $UA" \
             | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "::notice title=KRW markets::$(wc -l < markets.txt)"
 
-      - name: Fetch materials in chnks
-        shell: ash
-        rn: |
-          set -eo pipefail
+      - name: Fetch materials in chunks
+        shell: bash
+        run: |
+          set -euo pipefail
           rm -rf parts && mkdir -p parts
           mapfile -t ARR < markets.txt
-          n=${#ARR[@]}; i=; idx=1
+          n=${#ARR[@]}; i=0; idx=1
           while [ $i -lt $n ]; do
             part=$(IFS=,; printf '%s' "${ARR[*]:i:${CHUNK}}")
-            enc_part=$(printf '%s' "$part" | jq -sRr @ri)
-            ot="parts/part_${idx}.json"; ok=
-            for attempt in 1  3 4 5 6 7 8; do
-              sleep .8
-              rl="${BASE}/materials.json?mode=selected&fll=1&markets=${enc_part}"
-              code=$(crl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
-                        -w "%{http_code}" -o "$ot.tmp" --max-time 6 "$rl" || tre)
-              if [ "$code" = "" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$ot.tmp" >/dev/nll >&1; then
-                mv "$ot.tmp" "$ot"; ok=1; reak
+            enc_part=$(printf '%s' "$part" | jq -sRr @uri)
+            out="parts/part_${idx}.json"; ok=0
+            for attempt in 1 2 3 4 5 6 7 8; do
+              sleep 0.8
+              url="${BASE}/materials.json?mode=selected&full=1&markets=${enc_part}"
+              code=$(curl -4sS -H "User-Agent: $UA" -H "Accept: application/json" \
+                        -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
+              if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
+                mv "$out.tmp" "$out"; ok=1; break
               fi
             done
-            [ "$ok" = "1" ] || { echo "::warning::part ${idx} failed"; rm -f "$ot.tmp"; }
+            [ "$ok" = "1" ] || { echo "::warning::part ${idx} failed"; rm -f "$out.tmp"; }
             i=$((i+CHUNK)); idx=$((idx+1))
           done
-          ls -1 parts/part_*.json >/dev/nll | sort > parts/list.txt || tre
+          ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
 
       - name: Merge -> LLM_MATERIALS.json
-        shell: ash
-        rn: |
-          set -eo pipefail
-          files=$(cat parts/list.txt >/dev/nll || tre)
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=$(cat parts/list.txt 2>/dev/null || true)
           if [ -n "${files}" ]; then
             jq -s '
-              def valid: type=="oject" and (.markets|type=="array");
+              def valid: type=="object" and (.markets|type=="array");
               def GOOD: [ .[] | select(valid) ];
               def M: [ GOOD[] | .markets[] ];
               def FIRST: (GOOD | first) // {};
               {
                 version: (FIRST.version // "LLM_MATERIALS_V1"),
-                timestamps: (FIRST.timestamps // {kst:"",tc:""}),
+                timestamps: (FIRST.timestamps // {kst:"",utc:""}),
                 meta: (
                   (FIRST.meta // {}) as $m
-                  | ($m + {params: (($m.params // {}) + {markets: (M | map(.market) | niqe)})})
+                  | ($m + {params: (($m.params // {}) + {markets: (M | map(.market) | unique)})})
                 ),
-                markets: (M | niqe_y(.market))
+                markets: (M | unique_by(.market))
               }' $files > LLM_MATERIALS.json
           else
             echo "::error::No part files"; exit 1
           fi
 
       - name: Commit LLM_MATERIALS.json if changed
-        shell: ash
-        rn: |
-          set -eo pipefail
-          git config ser.name "gith-actions[ot]"
-          git config ser.email "418988+gith-actions[ot]@sers.noreply.gith.com"
-          if ! git diff --qiet -- LLM_MATERIALS.json; then
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- LLM_MATERIALS.json; then
             git add LLM_MATERIALS.json
-            git commit -m "chore(live): pdate LLM_MATERIALS.json (v11)"
-            git pll --rease --atostash origin "${GITHUB_REF_NAME:-main}" || tre
-            git psh origin HEAD:"${GITHUB_REF_NAME:-main}" || tre
+            git commit -m "chore(live): update LLM_MATERIALS.json (v11)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
           else
             echo "::notice title=Commit::No changes"
           fi
 
-      - name: Generate & commit 1 shards (materials_1/)
-        shell: ash
-        rn: |
-          set -eo pipefail
+      - name: Generate & commit 10 shards (materials_10/)
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
 import json, os, math
 inp = "LLM_MATERIALS.json"
-ot_dir = "materials_1"
-os.makedirs(ot_dir, exist_ok=Tre)
-with open(inp, "r", encoding="tf-8") as f:
+out_dir = "materials_10"
+os.makedirs(out_dir, exist_ok=True)
+with open(inp, "r", encoding="utf-8") as f:
     data = json.load(f)
 markets = data.get("markets", [])
 n = len(markets)
-shards = 1
-size = math.ceil(n / shards) if n else 
+shards = 10
+size = math.ceil(n / shards) if n else 0
 for i in range(shards):
     start = i*size
     end = min((i+1)*size, n)
-    part = {"index": i, "total": shards, "cont": end-start, "markets": markets[start:end]}
-    with open(os.path.join(ot_dir, f"shard_{i:d}.json"), "w", encoding="tf-8") as w:
-        json.dmp(part, w, ensre_ascii=False, indent=)
-print(f"Split {n} markets into {shards} shard files in {ot_dir}")
+    part = {"index": i, "total": shards, "count": end-start, "markets": markets[start:end]}
+    with open(os.path.join(out_dir, f"part_{i+1}.json"), "w", encoding="utf-8") as o:
+        json.dump(part, o, ensure_ascii=False, indent=2)
 PY
-          git config ser.name "gith-actions[ot]"
-          git config ser.email "418988+gith-actions[ot]@sers.noreply.gith.com"
-          if ! git diff --qiet -- materials_1/; then
-            git add materials_1/*.json || tre
-            git commit -m "chore(live): pdate materials_1 shards (v11)"
-            git pll --rease --atostash origin "${GITHUB_REF_NAME:-main}" || tre
-            git psh origin HEAD:"${GITHUB_REF_NAME:-main}" || tre
+          if ! git diff --quiet -- materials_10/; then
+            git add materials_10/
+            git commit -m "chore(live): update materials_10 shards (v11)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
           else
-            echo "::notice title=Commit::No shard changes"
+            echo "::notice title=Shards::No changes"
           fi
-
-concurrency:
-  group: mirror-upbit-v11-${{ github.event_name }}-${{ github.run_id }}
-  cancel-in-progress: false
