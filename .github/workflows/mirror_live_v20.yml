@@ -10,6 +10,7 @@ permissions:
 jobs:
   mirror:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,7 +46,7 @@ jobs:
             for attempt in 1 2 3 4 5; do
               url="https://api.shenqn.uk/materials.json?mode=selected&full=1&markets=${enc_part}"
               code=$(curl -4sS -H "User-Agent: GA-mirror/1.1" -H "Accept: application/json" \
-                        -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
+                    -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
               fi
@@ -83,7 +84,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet -- LLM_MATERIALS.json; then
             git add LLM_MATERIALS.json
-            git commit -m "chore(live): update LLM_MATERIALS.json (v20-fix)"
+            git commit -m "chore(live): update LLM_MATERIALS.json (v20)"
             git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
             git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
           else
