@@ -7,10 +7,11 @@ permissions:
   contents: write
 concurrency:
   group: mirror-upbit-v3
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   mirror:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       UA: "GA-mirror/1.1"
       BASE: "https://api.shenqn.uk"
