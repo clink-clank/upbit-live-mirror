@@ -139,5 +139,5 @@ PY
           fi
 
 concurrency:
-  group: mirror-upbit-v11-${{ github.event_name }}-${{ github.ref_name }}
+  group: mirror-upbit-v11-${{ github.event_name }}-${{ github.run_id }}
   cancel-in-progress: false
