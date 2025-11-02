@@ -1,0 +1,5 @@
+name: Run Now (live)
+on: { workflow_dispatch: {} }
+jobs:
+  call:
+    uses: ./.github/workflows/mirror_live.yml
