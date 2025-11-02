@@ -137,3 +137,7 @@ PY
           else
             echo "::notice title=Commit::No shard changes"
           fi
+
+concurrency:
+  group: mirror-upbit-v11-${{ github.event_name }}-${{ github.ref_name }}
+  cancel-in-progress: false

@@ -19,3 +19,7 @@ jos:
     needs: warmp
     ses: ./.gith/workflows/mirror_live_v11.yml
     secrets: inherit
+
+concurrency:
+  group: mirror-upbit-v11-wrapper-${{ github.run_id }}
+  cancel-in-progress: false
