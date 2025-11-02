@@ -1,6 +1,7 @@
 name: Mirror Live
 
 on:
+  workflow_call: {}
   workflow_dispatch: {}
   schedule:
     - cron: "*/5 * * * *"

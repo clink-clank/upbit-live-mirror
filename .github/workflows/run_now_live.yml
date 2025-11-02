@@ -3,3 +3,4 @@ on: { workflow_dispatch: {} }
 jobs:
   call:
     uses: ./.github/workflows/mirror_live.yml
+    secrets: inherit
