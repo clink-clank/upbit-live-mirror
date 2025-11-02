@@ -1,0 +1,17 @@
+name: Mirror Live v2
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/5 * * * *"
+permissions:
+  contents: write
+concurrency:
+  group: mirror-upbit-v2
+  cancel-in-progress: true
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure Python
+        run: python3 -V
