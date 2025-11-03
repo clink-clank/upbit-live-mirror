@@ -1,6 +1,7 @@
 name: Mirror Upbit Materials (hot, single-file + 10 shards)
 
 on:
+  workflow_call: {}
   workflow_dispatch:
   push:
     branches: [ main ]

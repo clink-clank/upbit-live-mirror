@@ -1,6 +1,7 @@
 name: Run Now (mirror hotpath)
 
 on:
+  workflow_call: {}
   workflow_dispatch: {}
 
 permissions:
