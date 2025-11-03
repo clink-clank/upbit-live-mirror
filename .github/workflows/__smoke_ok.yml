@@ -1,10 +1,13 @@
 name: __SMOKE_OK
-on:
+'on':
   workflow_dispatch: {}
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: '*/5 * * * *'
+  workflow_call: {}
 jobs:
   ping:
     runs-on: ubuntu-24.04
     steps:
       - run: echo "smoke ok"
+permissions:
+  contents: write

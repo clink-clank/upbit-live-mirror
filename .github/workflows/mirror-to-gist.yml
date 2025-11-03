@@ -1,13 +1,14 @@
 name: mirror-to-gist
-on:
+'on':
   workflow_call: {}
   workflow_dispatch: {}
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - LLM_MATERIALS.json
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: '*/15 * * * *'
 permissions:
   contents: read
 jobs:
@@ -18,32 +19,19 @@ jobs:
       - name: Ensure jq
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Prepare source
-        run: |
-          set -euo pipefail
-          if [ -s LLM_MATERIALS.json ]; then
-            if jq -c . LLM_MATERIALS.json > LLM_MATERIALS.min.json 2>/dev/null; then
-              SRC="LLM_MATERIALS.min.json"
-            else
-              echo "::error::LLM_MATERIALS.json is not valid JSON"; exit 1
-            fi
-          else
-            echo "::error::LLM_MATERIALS.json not found"; exit 1
-          fi
-          echo "SRC=$SRC" >> $GITHUB_ENV
+        run: "set -euo pipefail\nif [ -s LLM_MATERIALS.json ]; then\n  if jq -c .\
+          \ LLM_MATERIALS.json > LLM_MATERIALS.min.json 2>/dev/null; then\n    SRC=\"\
+          LLM_MATERIALS.min.json\"\n  else\n    echo \"::error::LLM_MATERIALS.json\
+          \ is not valid JSON\"; exit 1\n  fi\nelse\n  echo \"::error::LLM_MATERIALS.json\
+          \ not found\"; exit 1\nfi\necho \"SRC=$SRC\" >> $GITHUB_ENV\n"
       - name: Build Gist payload
-        run: |
-          set -euo pipefail
-          jq -n --rawfile content "$SRC" \
-            '{files: {"LLM_MATERIALS.json": {content: $content}}}' > payload.json
-          wc -c payload.json
+        run: "set -euo pipefail\njq -n --rawfile content \"$SRC\" \\\n  '{files: {\"\
+          LLM_MATERIALS.json\": {content: $content}}}' > payload.json\nwc -c payload.json\n"
       - name: PATCH Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: |
-          set -euo pipefail
-          curl -sS -X PATCH \
-            -H "Authorization: token ${GIST_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/gists/${GIST_ID}" \
-            --data @payload.json | jq -r '.updated_at, .html_url'
+        run: "set -euo pipefail\ncurl -sS -X PATCH \\\n  -H \"Authorization: token\
+          \ ${GIST_TOKEN}\" \\\n  -H \"Accept: application/vnd.github+json\" \\\n\
+          \  \"https://api.github.com/gists/${GIST_ID}\" \\\n  --data @payload.json\
+          \ | jq -r '.updated_at, .html_url'\n"

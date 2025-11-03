@@ -1,17 +1,14 @@
 name: Render Materials Snapshot (static HTML)
-
-on:
+'on':
   workflow_dispatch: {}
   schedule:
-    - cron: "*/5 * * * *"  # every 5 minutes
-
+    - cron: '*/5 * * * *'
+  workflow_call: {}
 permissions:
   contents: write
-
 concurrency:
   group: render-snapshot
   cancel-in-progress: false
-
 jobs:
   render:
     runs-on: ubuntu-24.04
@@ -21,35 +18,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
       - name: Install jq
-        run: |
-          sudo apt-get update
+        run: 'sudo apt-get update
+
           sudo apt-get install -y jq
 
+          '
       - name: Render snapshot (no JS)
-        run: |
-          set -euo pipefail
+        run: 'set -euo pipefail
+
           bash ./scripts/render_snapshot.sh
 
+          '
       - name: Upload artifact (materials.html)
         uses: actions/upload-artifact@v4
         with:
           name: materials_snapshot
           path: docs/materials.html
           retention-days: 3
-
       - name: Commit if changed
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- docs/materials.html; then
-            git add docs/materials.html
-            git commit -m "chore(snapshot): refresh docs/materials.html"
-            git pull --rebase origin main || true
-            git push origin HEAD:main
-            echo "::notice title=Commit::Pushed docs/materials.html"
-          else
-            echo "::notice title=Commit::No changes to commit"
-          fi
+        run: "set -euo pipefail\ngit config user.name \"github-actions[bot]\"\ngit\
+          \ config user.email \"41898282+github-actions[bot]@users.noreply.github.com\"\
+          \nif ! git diff --quiet -- docs/materials.html; then\n  git add docs/materials.html\n\
+          \  git commit -m \"chore(snapshot): refresh docs/materials.html\"\n  git\
+          \ pull --rebase origin main || true\n  git push origin HEAD:main\n  echo\
+          \ \"::notice title=Commit::Pushed docs/materials.html\"\nelse\n  echo \"\
+          ::notice title=Commit::No changes to commit\"\nfi\n"

@@ -1,17 +1,18 @@
 name: Mirror Manual
-on:
+'on':
   workflow_call: {}
   workflow_dispatch:
     inputs:
       chunk:
-        description: "Chunk size"
+        description: Chunk size
         required: false
         type: string
-        default: "15"
-
+        default: '15'
 jobs:
   call-mirror-core:
     uses: ./.github/workflows/mirror_core.yml
     with:
       chunk: ${{ github.event.inputs.chunk }}
     secrets: inherit
+permissions:
+  contents: write

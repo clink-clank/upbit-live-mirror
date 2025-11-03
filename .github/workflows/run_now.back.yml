@@ -1,5 +1,5 @@
 name: Run Now (probe)
-on:
+'on':
   workflow_call: {}
   workflow_dispatch: {}
 jobs:
@@ -7,3 +7,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "ok"
+permissions:
+  contents: write

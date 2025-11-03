@@ -1,8 +1,11 @@
 name: Dispatch Probe
-on:
-  workflow_dispatch:
+'on':
+  workflow_dispatch: {}
+  workflow_call: {}
 jobs:
   ok:
     runs-on: ubuntu-latest
     steps:
       - run: echo "it works"
+permissions:
+  contents: write

@@ -1,44 +1,27 @@
 name: Mirror Core (single-file + 10 shards)
-
-on:
+'on':
   workflow_call: {}
-  workflow_dispatch:
+  workflow_dispatch: {}
   schedule:
-    - cron: "*/15 * * * *"
-
+    - cron: '*/15 * * * *'
 permissions:
   contents: write
-
 jobs:
   mirror-core:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # === 기존 코어 파이프라인(전체 JSON 생성/검증/커밋 등)이 여기 들어갑니다 ===
-      # - name: Build LLM_MATERIALS.json (core)
-      #   run: |
-      #     bash scripts/build_materials_core.sh
-
-      # === 10분할 생성 ===
       - name: Setup Python
         run: python3 -V
-
       - name: Split LLM_MATERIALS.json into 10 shards (materials_10/)
-        run: |
-          python3 scripts/split_llm_materials.py
+        run: 'python3 scripts/split_llm_materials.py
 
+          '
       - name: Commit and push shards
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add materials_10/*.json || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(core): update materials shards (10)"
-            git push
-            echo "::notice title=Commit::Pushed materials_10 shards"
-          else
-            echo "::notice title=Commit::No shard changes"
-          fi
+        run: "set -euo pipefail\ngit config user.name \"github-actions[bot]\"\ngit\
+          \ config user.email \"41898282+github-actions[bot]@users.noreply.github.com\"\
+          \ngit add materials_10/*.json || true\nif ! git diff --cached --quiet; then\n\
+          \  git commit -m \"chore(core): update materials shards (10)\"\n  git push\n\
+          \  echo \"::notice title=Commit::Pushed materials_10 shards\"\nelse\n  echo\
+          \ \"::notice title=Commit::No shard changes\"\nfi\n"

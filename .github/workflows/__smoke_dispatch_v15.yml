@@ -1,6 +1,7 @@
 name: __SMOKE_DISPATCH_V15
-on:
-  workflow_dispatch:
+'on':
+  workflow_dispatch: {}
+  workflow_call: {}
 permissions:
   contents: read
 jobs:
