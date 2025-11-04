@@ -1,0 +1,32 @@
+name: Materials Pipeline (5m)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes on the clock
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-split:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Verify LLM_MATERIALS.json exists
+        run: |
+          test -s LLM_MATERIALS.json || { echo "LLM_MATERIALS.json missing"; exit 1; }
+          jq -e 'type=="object" and (.markets|type=="array")' LLM_MATERIALS.json >/dev/null
+
+      - name: Build b64+gz and split into parts
+        run: |
+          bash tools/build_b64gz_chunks_v1.sh "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/LLM_MATERIALS.json" \
+            "$GITHUB_WORKSPACE/docs/parts" materials 160000 \
+            --commit --owner_repo "${{ github.repository }}" --branch "${{ github.ref_name }}"
