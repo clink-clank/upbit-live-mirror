@@ -2,19 +2,22 @@ name: Materials Pipeline (5m)
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # UTC 기준 5분마다(정각 00/05/10/.../55)
-  workflow_dispatch: {}
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: materials-pipeline
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build-and-publish:
+  build_and_publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,16 +27,17 @@ jobs:
           set -euo pipefail
           sudo apt-get update -y
           sudo apt-get install -y jq
+          jq --version
 
       - name: Build KRW market list (Upbit)
         run: |
           set -euo pipefail
-          curl -4fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: GA-mirror/1.1"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
-          echo "::notice title=KRW markets::$(wc -l < markets.txt)"
+          curl -fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: GA-mirror/1.1"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          echo "KRW markets: $(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks
         env:
-          CHUNK: 10
+          CHUNK: "10"
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
@@ -45,7 +49,7 @@ jobs:
             out="parts/part_${idx}.json"; ok=0
             for attempt in 1 2 3 4 5; do
               url="https://api.shenqn.uk/materials.json?mode=selected&full=1&markets=${enc_part}"
-              code=$(curl -4sS -H "User-Agent: GA-mirror/1.1" -H "Accept: application/json"                     -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
+              code=$(curl -fsS -w "%{http_code}" -o "$out.tmp" --max-time 60 "$url" || true)
               if [ "$code" = "200" ] && jq -e '(.markets|type=="array") and (.markets|length>=1)' "$out.tmp" >/dev/null 2>&1; then
                 mv "$out.tmp" "$out"; ok=1; break
               fi
@@ -76,16 +80,28 @@ jobs:
             echo "{}" > LLM_MATERIALS.json
           fi
 
-      - name: Commit if changed
+          # Validate shape
+          jq -e 'type=="object" and .version=="LLM_MATERIALS_V1" and (.markets|type=="array" and length>0)' LLM_MATERIALS.json >/dev/null
+
+      - name: Encode & publish b64+gzip
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
+          mkdir -p docs
+          gzip -c LLM_MATERIALS.json | base64 -w0 > docs/materials_current.b64gz.txt
+          base64 -d docs/materials_current.b64gz.txt | gzip -t
+          echo "version=$(jq -r .version LLM_MATERIALS.json)"
+          echo "utc=$(jq -r .timestamps.utc LLM_MATERIALS.json)"
+          echo "markets=$(jq -r '.markets|length' LLM_MATERIALS.json)"
+
+      - name: Commit & push if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- LLM_MATERIALS.json; then
-            git add LLM_MATERIALS.json
-            git commit -m "chore(live): update LLM_MATERIALS.json (pipeline)"
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-            git push origin HEAD:"${GITHUB_REF_NAME:-main}" || true
+          git add LLM_MATERIALS.json docs/materials_current.b64gz.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "data: refresh LLM_MATERIALS + publish b64 (5m pipeline)"
+            git push
           else
-            echo "::notice title=Commit::No changes"
+            echo "No data changes; skipping push"
           fi
