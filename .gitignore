@@ -1,4 +1,3 @@
-LLM_MATERIALS_from_*.json
+docs/parts/materials_joined_preview.json
 LLM_MATERIALS_joined.json
-materials_current.b64gz.txt
-report_v4.txt
+*.log
