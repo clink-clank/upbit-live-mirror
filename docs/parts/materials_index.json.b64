@@ -1,0 +1,12 @@
+{
+  "created_utc": "2025-11-04T13:30:31Z",
+  "created_kst": "2025-11-04 22:30:31",
+  "prefix": "materials_",
+  "total_parts": 19,
+  "chunk_bytes": 160000,
+  "bytes_b64": 2994652,
+  "sha256_b64": "b02c3cbb22345c7692f7608611b954dc96314ef591050c830c68c578c9710bf0",
+  "sha256_json": "e9386d1e7f95bd0572baab6b868e099a026f3865434c027d1db0f4000d0c2bf1",
+  "url_prefix": "https://raw.githubusercontent.com/clink-clank/upbit-live-mirror/main/docs/parts/materials_",
+  "single_file_fallback": "https://raw.githubusercontent.com/clink-clank/upbit-live-mirror/main/docs/materials_current.b64gz.txt"
+}
