@@ -1,0 +1,12 @@
+[업비트 LLM 데이터 인제스트 절차(브라우저 제약 대응)]
+1) 먼저 다음 URL의 index.html을 열어라:
+   https://github.com/__OWNER__/__REPO__/tree/__REF__/web
+   → 그 안의 `index.html` 파일을 연 뒤, 페이지에서 제공하는 **링크를 클릭**해 접근할 것.
+2) 싱글 경로: `materials_current.b64gz.txt`를 클릭해 열고,
+   - 맨 앞 4문자가 정확히 "H4sI"인지 확인.
+   - Base64 디코드 → gunzip → JSON 파싱.
+3) 싱글 실패 시 폴백 경로:
+   - `docs/parts/materials.partlist.urls`를 열고 **각 줄의 URL을 순서대로 클릭/열람**해 직렬 GET.
+   - 첫 파츠(번호 000)만 "H4sI" 프롤로그 확인.
+   - 조각을 순차 결합하여 Base64 → gunzip → JSON 파싱.
+4) 캐시 문제로 최신 반영이 필요하면 `@__REF__` 대신 고정 커밋 `@<commit>`이 걸린 링크를 클릭할 것.

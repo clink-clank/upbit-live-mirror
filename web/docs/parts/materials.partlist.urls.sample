@@ -1,0 +1,3 @@
+# 각 줄에 한 개의 jsDelivr URL을 넣으세요. (이 파일을 복사해 확장자 제거: materials.partlist.urls)
+# 예: https://cdn.jsdelivr.net/gh/__OWNER__/__REPO__@__REF__/web/docs/parts/materials.000.b64
+#     https://cdn.jsdelivr.net/gh/__OWNER__/__REPO__@__REF__/web/docs/parts/materials.001.b64
