@@ -1,26 +1,26 @@
 name: Materials Pipeline (5m)
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
-  workflow_dispatch:
 
 permissions:
   contents: write
-  actions: read
-
-concurrency:
-  group: materials-pipeline
-  cancel-in-progress: false
 
 jobs:
   build_and_publish:
+    name: build_and_publish
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    concurrency:
+      group: materials-pipeline
+      cancel-in-progress: true
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup jq
         run: |
@@ -86,22 +86,56 @@ jobs:
       - name: Encode & publish b64+gzip
         run: |
           set -euo pipefail
-          mkdir -p docs
+          mkdir -p docs web/docs
           gzip -c LLM_MATERIALS.json | base64 -w0 > docs/materials_current.b64gz.txt
+          cp docs/materials_current.b64gz.txt web/docs/materials_current.b64gz.txt
           base64 -d docs/materials_current.b64gz.txt | gzip -t
           echo "version=$(jq -r .version LLM_MATERIALS.json)"
           echo "utc=$(jq -r .timestamps.utc LLM_MATERIALS.json)"
           echo "markets=$(jq -r '.markets|length' LLM_MATERIALS.json)"
 
-      - name: Commit & push if changed
+      - name: Split to 80KB parts under web/docs/parts
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
+          mkdir -p web/docs/parts
+          src="web/docs/materials_current.b64gz.txt"
+          split -b 80k -d -a 3 "$src" web/docs/parts/materials_
+          for f in web/docs/parts/materials_*; do mv "$f" "${f}.b64"; done
+
+          ls -1 web/docs/parts/materials_*.b64 | sort > web/docs/parts/materials.partlist
+          jq -Rsc 'split("\n")| map(select(length>0))' < web/docs/parts/materials.partlist > web/docs/parts/materials.partlist.json
+
+          COMMIT="${GITHUB_SHA:-__COMMIT__}"
+          : > web/docs/parts/materials.partlist.urls
+          while read -r p; do
+            rel="${p#web/}"
+            echo "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${COMMIT}/${rel}" >> web/docs/parts/materials.partlist.urls
+          done < web/docs/parts/materials.partlist
+
+      - name: Commit & push (rebase-safe, retry)
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add LLM_MATERIALS.json docs/materials_current.b64gz.txt
-          if ! git diff --cached --quiet; then
-            git commit -m "data: refresh LLM_MATERIALS + publish b64 (5m pipeline)"
-            git push
-          else
+
+          git add LLM_MATERIALS.json docs/materials_current.b64gz.txt web/docs/ -A
+
+          if git diff --cached --quiet; then
             echo "No data changes; skipping push"
+            exit 0
           fi
+
+          git commit -m "data: refresh LLM_MATERIALS + publish web/docs single + 80KB parts"
+
+          BR="${GITHUB_REF_NAME:-main}"
+          for attempt in 1 2 3; do
+            git fetch origin "$BR" --depth=50 || git fetch --unshallow
+            git pull --rebase --autostash origin "$BR" || true
+            if git push; then
+              echo "Push succeeded on attempt #$attempt"
+              exit 0
+            fi
+            echo "Push failed (attempt #$attempt). Retrying..."
+            sleep 2
+          done
+          echo "Push failed after retries"; exit 1

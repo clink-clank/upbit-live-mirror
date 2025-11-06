@@ -2,61 +2,52 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Upbit LLM Delivery Index</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Upbit Live Mirror — Data Access</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; line-height: 1.6; }
-    code, pre { background: #f5f5f7; padding: 0.2rem 0.4rem; border-radius: 4px; }
-    a { text-decoration: none; }
-    .box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
-    h1 { margin-top: 0; }
-    .hint { color: #6b7280; font-size: 0.9rem; }
-    ul { margin: 0.5rem 0 1rem 1.5rem; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.45; padding: 24px; max-width: 900px; margin: auto; }
+    code, pre { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 16px 0; }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    h2 { font-size: 18px; margin: 16px 0 8px; }
+    ol { padding-left: 18px; }
+    .ok { color: #047857; font-weight: 600; }
   </style>
 </head>
 <body>
-  <h1>Upbit LLM Delivery Index</h1>
-  <p class="hint">먼저 이 페이지를 연 뒤, 아래 링크를 <strong>클릭</strong>해서 접근하세요. LLM 브라우저는 직접 타이핑한 RAW URL보다 <em>클릭</em>을 선호합니다.</p>
+  <h1>Upbit Live Mirror — LLM Data Entry</h1>
 
-  <div class="box">
-    <h2>싱글 페이로드</h2>
-    <ul>
-      <li>
-        <a href="https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@main/web/docs/materials_current.b64gz.txt" target="_blank">
-          materials_current.b64gz.txt (jsDelivr @main)
-        </a>
-      </li>
-      <li class="hint">시작 4문자가 <code>H4sI</code>인지 확인 → Base64 디코드 → gunzip → JSON 파싱</li>
-    </ul>
+  <div class="card">
+    <h2>1) Single File (Base64+Gzip)</h2>
+    <p>Open this first. The first 4 bytes should be <code>H4sI</code>. Then Base64-decode and gunzip to JSON.</p>
+    <p><a id="single" href="#">/web/docs/materials_current.b64gz.txt</a></p>
   </div>
 
-  <div class="box">
-    <h2>폴백(분할 파츠) 목록</h2>
-    <ul>
-      <li>
-        <a href="https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@main/web/docs/parts/materials.partlist.urls" target="_blank">
-          materials.partlist.urls (jsDelivr @main)
-        </a>
-      </li>
-      <li class="hint">각 줄의 URL을 순서대로 직렬 GET. 000번 파츠만 <code>H4sI</code> 프롤로그 확인.</li>
-    </ul>
+  <div class="card">
+    <h2>2) Fallback (80KB Parts)</h2>
+    <ol>
+      <li>Fetch <code>materials.partlist.urls</code>.</li>
+      <li>Download each URL in order and concatenate bytes.</li>
+      <li>Base64-decode the concatenated stream and gunzip → JSON.</li>
+      <li>Only check the very first part's first 4 bytes are <code>H4sI</code>.</li>
+    </ol>
+    <p><a id="partlist" href="#">/web/docs/parts/materials.partlist.urls</a></p>
   </div>
 
-  <div class="box">
-    <h2>커밋 핀 버전(선택)</h2>
-    <p class="hint">@main 대신 @<code>&lt;commit&gt;</code> 으로 고정하면 캐시 문제 감소.</p>
-    <ul>
-      <li>
-        <a href="https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@__COMMIT__/web/docs/materials_current.b64gz.txt" target="_blank">
-          materials_current.b64gz.txt (jsDelivr @<code>__COMMIT__</code>)
-        </a>
-      </li>
-      <li>
-        <a href="https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@__COMMIT__/web/docs/parts/materials.partlist.urls" target="_blank">
-          materials.partlist.urls (jsDelivr @<code>__COMMIT__</code>)
-        </a>
-      </li>
-    </ul>
+  <div class="card">
+    <h2>Cache-Busting</h2>
+    <p>These links are pinned to commit <code id="commit">__COMMIT__</code> via jsDelivr. You can replace it with a specific commit hash to fully avoid caches.</p>
   </div>
+
+<script>
+(function(){
+  const ownerRepo = (window.location.pathname.match(/\/([^\/]+)\/([^\/]+)/) || []).slice(1).join('/');
+  const commit = "__COMMIT__";
+  const base = `https://cdn.jsdelivr.net/gh/${ownerRepo}@${commit}`;
+  document.getElementById('single').href = base + "/web/docs/materials_current.b64gz.txt";
+  document.getElementById('partlist').href = base + "/web/docs/parts/materials.partlist.urls";
+  document.getElementById('commit').textContent = commit;
+})();
+</script>
 </body>
 </html>
