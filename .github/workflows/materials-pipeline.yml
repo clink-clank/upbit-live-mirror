@@ -2,23 +2,20 @@ name: Materials Pipeline (5m)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'
+  push:
+    paths:
+      - ".github/workflows/materials-pipeline.yml"
 
 permissions:
   contents: write
 
 jobs:
   build_and_publish:
-    name: build_and_publish
     runs-on: ubuntu-latest
-    concurrency:
-      group: materials-pipeline
-      cancel-in-progress: true
-
+    env:
+      CHUNK: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -32,12 +29,13 @@ jobs:
       - name: Build KRW market list (Upbit)
         run: |
           set -euo pipefail
-          curl -fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: GA-mirror/1.1"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: GA-mirror/1.1" \
+            | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "KRW markets: $(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks
         env:
-          CHUNK: "10"
+          CHUNK: ${{ env.CHUNK }}
         run: |
           set -euo pipefail
           rm -rf parts && mkdir -p parts
@@ -79,8 +77,6 @@ jobs:
           else
             echo "{}" > LLM_MATERIALS.json
           fi
-
-          # Validate shape
           jq -e 'type=="object" and .version=="LLM_MATERIALS_V1" and (.markets|type=="array" and length>0)' LLM_MATERIALS.json >/dev/null
 
       - name: Encode & publish b64+gzip
@@ -101,14 +97,14 @@ jobs:
           src="web/docs/materials_current.b64gz.txt"
           split -b 80k -d -a 3 "$src" web/docs/parts/materials_
           for f in web/docs/parts/materials_*; do mv "$f" "${f}.b64"; done
-
           ls -1 web/docs/parts/materials_*.b64 | sort > web/docs/parts/materials.partlist
           jq -Rsc 'split("\n")| map(select(length>0))' < web/docs/parts/materials.partlist > web/docs/parts/materials.partlist.json
 
+          # *** URL은 'web/' 접두어 포함해서 생성 ***
           COMMIT="${GITHUB_SHA:-__COMMIT__}"
           : > web/docs/parts/materials.partlist.urls
           while read -r p; do
-            rel="${p#web/}"
+            rel="$p"  # web/ 접두어 유지
             echo "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${COMMIT}/${rel}" >> web/docs/parts/materials.partlist.urls
           done < web/docs/parts/materials.partlist
 
@@ -117,25 +113,18 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add LLM_MATERIALS.json docs/materials_current.b64gz.txt web/docs/ -A
-
           if git diff --cached --quiet; then
-            echo "No data changes; skipping push"
-            exit 0
+            echo "No data changes; skipping push"; exit 0
           fi
-
           git commit -m "data: refresh LLM_MATERIALS + publish web/docs single + 80KB parts"
-
           BR="${GITHUB_REF_NAME:-main}"
           for attempt in 1 2 3; do
             git fetch origin "$BR" --depth=50 || git fetch --unshallow
             git pull --rebase --autostash origin "$BR" || true
             if git push; then
-              echo "Push succeeded on attempt #$attempt"
-              exit 0
+              echo "Push succeeded on attempt #$attempt"; exit 0
             fi
-            echo "Push failed (attempt #$attempt). Retrying..."
-            sleep 2
+            echo "Push failed (attempt #$attempt). Retrying..."; sleep 2
           done
           echo "Push failed after retries"; exit 1
