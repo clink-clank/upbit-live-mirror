@@ -1,28 +1,23 @@
 #!/usr/bin/env bash
-# Fetch single b64+gz file and restore LLM_MATERIALS.json
 set -euo pipefail
 
-if ! command -v jq >/dev/null; then
-  echo "jq not found; please install jq" >&2
-  exit 1
-fi
+# 1) SHA 자동 추출(파츠 URL 1줄에서 커밋 핀 가져옴)
+URLS_FILE="${1:-web/docs/parts/materials.partlist.urls}"
+OUT_JSON="${2:-LLM_MATERIALS.single.json}"
 
-SINGLE_URL="${1:-}"
-OUT_JSON="${2:-LLM_MATERIALS.json}"
+SHA="$(head -n1 "$URLS_FILE" | sed -E 's#.*@([0-9a-f]{7,40}).*#\1#')"
+SINGLE_URL="https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@${SHA}/web/docs/materials_current.b64gz.txt"
 
-if [ -z "${SINGLE_URL}" ]; then
-  echo "Usage: $0 <URL-to-materials_current.b64gz.txt> [out_json]" >&2
-  echo "Example:" >&2
-  echo "  $0 https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@<COMMIT>/web/docs/materials_current.b64gz.txt" >&2
-  exit 2
-fi
+echo "[single] commit: $SHA"
+echo "[single] url: $SINGLE_URL"
 
-tmp="materials_current.b64gz.txt"
-curl -fsSL "$SINGLE_URL" -o "$tmp"
-head -c 4 "$tmp" | sed -e 's/^/[prefix] /'
-base64 -d "$tmp" | gzip -d > "$OUT_JSON"
-rm -f "$tmp"
+tmp_b64="$(mktemp)"
+trap 'rm -f "$tmp_b64"' EXIT
 
+curl -fsSL "$SINGLE_URL" -o "$tmp_b64"
+echo -n "[single] head magic: "; head -c 4 "$tmp_b64"; echo
+base64 -d < "$tmp_b64" | gunzip > "$OUT_JSON"
+
+echo "[single] wrote $OUT_JSON ($(wc -c < "$OUT_JSON") bytes)"
 jq -e 'type=="object" and .version=="LLM_MATERIALS_V1" and (.markets|type=="array" and length>0)' "$OUT_JSON" >/dev/null
-echo "[+] Restored $OUT_JSON"
-jq -r '.version, .timestamps.utc, (.markets|length)' "$OUT_JSON"
+echo "[single] ok: version=$(jq -r .version "$OUT_JSON"), utc=$(jq -r .timestamps.utc "$OUT_JSON"), markets=$(jq -r ".markets|length" "$OUT_JSON")"

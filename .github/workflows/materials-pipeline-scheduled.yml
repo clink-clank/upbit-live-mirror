@@ -1,10 +1,12 @@
-name: Materials Pipeline (5m)
+name: Materials Pipeline (cron 30m)
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"  # every 30 minutes (UTC)
   push:
     paths:
-      - ".github/workflows/materials-pipeline.yml"
+      - ".github/workflows/materials-pipeline-scheduled.yml"
 
 permissions:
   contents: write
@@ -52,7 +54,7 @@ jobs:
               fi
               sleep 1
             done
-            [ "$ok" = "1" ] || { echo "::warning::part ${idx} failed"; rm -f "$out.tmp"; }
+            [ "$ok" = "1" ] || { echo "::warning::part ${idx} failed"; rm -f "$out.tmp" ; }
             i=$((i+CHUNK)); idx=$((idx+1))
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true

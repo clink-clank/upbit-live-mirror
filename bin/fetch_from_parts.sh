@@ -1,47 +1,21 @@
 #!/usr/bin/env bash
-# Reassemble LLM_MATERIALS.json from 80KB parts (b64+gz) listed in materials.partlist.urls
 set -euo pipefail
 
-if ! command -v jq >/dev/null; then
-  echo "jq not found; please install jq" >&2
-  exit 1
-fi
+URLS_FILE="${1:-web/docs/parts/materials.partlist.urls}"
+OUT_JSON="${2:-LLM_MATERIALS.from_parts.json}"
 
-PARTLIST_URLS="${1:-}"
-WORKDIR="${2:-./_materials_dl}"
-OUT_JSON="${3:-LLM_MATERIALS.json}"
+tmp_b64="$(mktemp)"
+trap 'rm -f "$tmp_b64"' EXIT
 
-if [ -z "${PARTLIST_URLS}" ]; then
-  echo "Usage: $0 <URL-to-materials.partlist.urls> [workdir] [out_json]" >&2
-  echo "Example:" >&2
-  echo "  $0 https://cdn.jsdelivr.net/gh/clink-clank/upbit-live-mirror@<COMMIT>/web/docs/parts/materials.partlist.urls" >&2
-  exit 2
-fi
-
-mkdir -p "$WORKDIR"
-curl -fsSL "$PARTLIST_URLS" -o "$WORKDIR/partlist.urls"
-echo "[+] Using partlist: $PARTLIST_URLS"
-echo "[+] Downloading parts..."
-
-: > "$WORKDIR/materials.b64"
-idx=0
+echo "[parts] reading urls from: $URLS_FILE"
 while IFS= read -r url; do
-  [ -n "$url" ] || continue
-  idx=$((idx+1))
-  printf "  - [%03d] %s\n" "$idx" "$url"
-  curl -fsSL "$url" >> "$WORKDIR/materials.b64"
-done < "$WORKDIR/partlist.urls"
+  [ -z "$url" ] && continue
+  curl -fsSL "$url" >> "$tmp_b64"
+done < "$URLS_FILE"
 
-first4=$(head -c 4 "$WORKDIR/materials.b64" || true)
-if [ "$first4" != "H4sI" ]; then
-  echo "[!] Warning: unexpected prefix '$first4' (expected 'H4sI')" >&2
-fi
+echo -n "[parts] head magic: "; head -c 4 "$tmp_b64"; echo
+base64 -d < "$tmp_b64" | gunzip > "$OUT_JSON"
 
-base64 -d "$WORKDIR/materials.b64" | gzip -d > "$OUT_JSON"
-echo "[+] Wrote $OUT_JSON"
-
+echo "[parts] wrote $OUT_JSON ($(wc -c < "$OUT_JSON") bytes)"
 jq -e 'type=="object" and .version=="LLM_MATERIALS_V1" and (.markets|type=="array" and length>0)' "$OUT_JSON" >/dev/null
-echo "[+] Valid JSON shape"
-echo "    version:  $(jq -r .version "$OUT_JSON")"
-echo "    utc:      $(jq -r .timestamps.utc "$OUT_JSON")"
-echo "    markets:  $(jq -r '.markets|length' "$OUT_JSON")"
+echo "[parts] ok: version=$(jq -r .version "$OUT_JSON"), utc=$(jq -r .timestamps.utc "$OUT_JSON"), markets=$(jq -r ".markets|length" "$OUT_JSON")"
