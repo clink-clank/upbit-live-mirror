@@ -1,0 +1,11 @@
+    {
+      "src_file": "web/docs/LLM_MATERIALS.json",
+      "src_sha256": "3eb5e0c1889ecb46736806f3b78c87ee3e2f40684b6b83372ab6d6420f42488f",
+      "slice_count": 50,
+      "next_index": 0,
+      "manifest": "web/docs/jina_slices/materials_current/manifest.json",
+      "updated_utc": "2025-11-07T17:59:01Z"
+    }
+    EOF
+
+    echo "[prepare] slices ready: web/docs/jina_slices/materials_current/slices (sha=3eb5e0c1889ecb46736806f3b78c87ee3e2f40684b6b83372ab6d6420f42488f, chunks=50, chunk_size=373122)"
