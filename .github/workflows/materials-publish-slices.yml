@@ -1,0 +1,50 @@
+name: Materials Publish Slices
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'web/docs/LLM_MATERIALS.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materials-publish-slices-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-slices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure jq
+        run: |
+          set -eux
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Make slices
+        run: |
+          set -eux
+          chmod +x bin/make_material_slices.sh || true
+          bash bin/make_material_slices.sh web/docs/LLM_MATERIALS.json
+
+      - name: Commit & push (if changed)
+        run: |
+          set -eux
+          git add web/docs/materials_preview.json \
+                  web/docs/materials_status.json \
+                  web/docs/materials_index.json \
+                  web/docs/materials_by_market || true
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "docs: publish materials slices (preview/index/per-market)"
+            git push
+          else
+            echo "No changes to commit."
+          fi
