@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Materials Probe</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;line-height:1.5}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+  .ok{color:#0b8a0b}.err{color:#b50000}
+  .box{border:1px solid #ddd;border-radius:8px;padding:12px;margin:12px 0;background:#fafafa}
+</style>
+<h1>LLM Materials Probe</h1>
+<p>This tiny page fetches <code>materials_probe_sample.json</code> and shows a quick summary.</p>
+<div id="out" class="box">Loading…</div>
+<script>
+(async () => {
+  const out = document.getElementById('out');
+  try {
+    const res = await fetch('./materials_probe_sample.json', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const j = await res.json();
+    out.innerHTML = '<div class="ok"><b>OK</b> — version: <code>'+j.version+'</code>, utc: <code>'+j.utc+'</code>, markets_count: <code>'+j.markets_count+'</code></div>'
+      + '<pre>'+JSON.stringify(j.sample_markets, null, 2)+'</pre>';
+  } catch (e) {
+    out.innerHTML = '<div class="err"><b>ERROR</b> '+e.message+'</div>';
+  }
+})();
+</script>
+</html>
