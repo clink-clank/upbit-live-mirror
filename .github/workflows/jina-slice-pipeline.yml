@@ -1,0 +1,47 @@
+name: Jina Slice Publisher (5m)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jina-slice-pipeline
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y jq coreutils gawk
+
+      - name: Build JSON if missing (optional)
+        run: |
+          set -euo pipefail
+          if [[ ! -f web/docs/LLM_MATERIALS.json && -x bin/publish_llm_materials.sh ]]; then
+            bash bin/publish_llm_materials.sh || true
+          fi
+
+      - name: Slice & Publish (50 pieces + manifest)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash bin/jina_slice_pipeline.sh web/docs/LLM_MATERIALS.json web/docs/jina_slices/materials_current 50
+
+      - name: Show manifest head (debug)
+        run: |
+          set -euo pipefail
+          head -n 30 web/docs/jina_slices/materials_current/manifest.json || true
