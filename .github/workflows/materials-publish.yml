@@ -1,0 +1,58 @@
+name: Materials Publish (join parts ➜ single)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "web/docs/parts/materials.partlist.urls"
+      - "web/docs/parts/materials_*.b64"
+
+permissions:
+  contents: write
+
+jobs:
+  publish_single:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Join parts into single base64 (no decode)
+        run: |
+          set -euo pipefail
+          test -f web/docs/parts/materials.partlist.urls
+          tmp="$(mktemp)"
+          while IFS= read -r url; do
+            # Skip comments/blank lines
+            [ -z "$url" ] && continue
+            case "$url" in \#*) continue;; esac
+            curl -fsSL "$url" >> "$tmp"
+          done < web/docs/parts/materials.partlist.urls
+          mkdir -p docs
+          mv "$tmp" docs/materials_current.b64gz.txt
+          echo "Head magic: $(head -c 4 docs/materials_current.b64gz.txt)"
+
+      - name: Verify single decodes (sanity)
+        run: |
+          set -euo pipefail
+          head -c 4 docs/materials_current.b64gz.txt | tr -d '\n' | grep -q '^H4sI'
+          base64 -d < docs/materials_current.b64gz.txt | gzip -t
+          echo "Gzip OK"
+
+      - name: Commit & push if changed
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          git add docs/materials_current.b64gz.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: publish materials_current.b64gz.txt (joined from parts)"
+            git push
+          else
+            echo "No changes to commit."
+          fi
