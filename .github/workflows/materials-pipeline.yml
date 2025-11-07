@@ -46,7 +46,7 @@ jobs:
           PIN_GOOD: "35794df604aecf3d5126f8614e15896d7a290c0e"
         run: |
           set -euo pipefail
-          bash bin/publish_llm_materials.sh web/docs/parts/materials.partlist.urls web/docs/LLM_MATERIALS.json "${ env.PIN_GOOD }"
+          bash bin/publish_llm_materials.sh web/docs/parts/materials.partlist.urls web/docs/LLM_MATERIALS.json "$PIN_GOOD"
 
       - name: Slice 50 files for Jina proxy
         env:
