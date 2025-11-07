@@ -2,12 +2,15 @@ name: Materials Pipeline (5m)
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/materials-pipeline.yml"
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 minutes
 
 permissions:
   contents: write
+
+concurrency:
+  group: materials-pipeline
+  cancel-in-progress: true
 
 jobs:
   build_and_publish:
@@ -29,7 +32,7 @@ jobs:
       - name: Build KRW market list (Upbit)
         run: |
           set -euo pipefail
-          curl -fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: GA-mirror/1.1"             | jq -r '.[].market' | grep '^KRW-' > markets.txt
+          curl -fsSL "https://api.upbit.com/v1/market/all?isDetails=false" -H "User-Agent: GA-mirror/1.1"                 | jq -r '.[].market' | grep '^KRW-' > markets.txt
           echo "KRW markets: $(wc -l < markets.txt)"
 
       - name: Fetch materials in chunks
@@ -57,78 +60,31 @@ jobs:
           done
           ls -1 parts/part_*.json 2>/dev/null | sort > parts/list.txt || true
 
-      - name: Merge -> LLM_MATERIALS.json
+      - name: Join → web/docs/LLM_MATERIALS.json
         run: |
           set -euo pipefail
-          files=$(cat parts/list.txt 2>/dev/null || true)
-          if [ -n "${files}" ]; then
-            jq -s '
-              def valid: type=="object" and (.markets|type=="array");
-              def GOOD: [ .[] | select(valid) ];
-              def M: [ GOOD[] | .markets[] ];
-              def FIRST: (GOOD | first) // {};
-              {
-                version: (FIRST.version // "LLM_MATERIALS_V1"),
-                timestamps: (FIRST.timestamps // {kst:"",utc:""}),
-                meta: ((FIRST.meta // {}) as $m | ($m + {params: (($m.params // {}) + {markets: (M | map(.market) | unique)})})),
-                markets: (M | unique_by(.market))
-              }' $files > LLM_MATERIALS.json
-          else
-            echo "{}" > LLM_MATERIALS.json
-          fi
-          jq -e 'type=="object" and .version=="LLM_MATERIALS_V1" and (.markets|type=="array" and length>0)' LLM_MATERIALS.json >/dev/null
+          mkdir -p web/docs
+          jq -s '
+            reduce .[] as $p (
+              {"version":"LLM_MATERIALS_V1","timestamps":{"utc":(now|todateiso8601)},"markets":[]};
+              .markets += ($p.markets // [])
+            )
+          ' $(cat parts/list.txt) > web/docs/LLM_MATERIALS.json
+          jq -r '.version, .timestamps.utc, (.markets|length)' web/docs/LLM_MATERIALS.json
 
-      - name: Encode & publish b64+gzip
+      - name: Also publish web/docs/materials_current.b64gz.txt
         run: |
           set -euo pipefail
-          mkdir -p docs web/docs
-          gzip -c LLM_MATERIALS.json | base64 -w0 > docs/materials_current.b64gz.txt
-          cp docs/materials_current.b64gz.txt web/docs/materials_current.b64gz.txt
-          base64 -d docs/materials_current.b64gz.txt | gzip -t
-          echo "version=$(jq -r .version LLM_MATERIALS.json)"
-          echo "utc=$(jq -r .timestamps.utc LLM_MATERIALS.json)"
-          echo "markets=$(jq -r '.markets|length' LLM_MATERIALS.json)"
+          gzip -c -9 web/docs/LLM_MATERIALS.json | base64 -w 0 > web/docs/materials_current.b64gz.txt
+          head -c 4 web/docs/materials_current.b64gz.txt | sed -n '1p'
 
-      - name: Split to 80KB parts under web/docs/parts
+      - name: Commit & Push
         run: |
           set -euo pipefail
-          mkdir -p web/docs/parts
-          src="web/docs/materials_current.b64gz.txt"
-          split -b 80k -d -a 3 "$src" web/docs/parts/materials_
-          for f in web/docs/parts/materials_*; do mv "$f" "${f}.b64"; done
-          ls -1 web/docs/parts/materials_*.b64 | sort > web/docs/parts/materials.partlist
-          jq -Rsc 'split("\n")| map(select(length>0))' < web/docs/parts/materials.partlist > web/docs/parts/materials.partlist.json
-
-          COMMIT="${GITHUB_SHA:-__COMMIT__}"
-          : > web/docs/parts/materials.partlist.urls
-          while read -r p; do
-            rel="$p" # keep 'web/' prefix
-            echo "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${COMMIT}/${rel}" >> web/docs/parts/materials.partlist.urls
-          done < web/docs/parts/materials.partlist
-
-      - name: Commit & push (rebase-safe, retry)
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add LLM_MATERIALS.json docs/materials_current.b64gz.txt web/docs/ -A
-
+          git add web/docs/LLM_MATERIALS.json web/docs/materials_current.b64gz.txt || true
           if git diff --cached --quiet; then
-            echo "No data changes; skipping push"
+            echo "No changes to commit"
             exit 0
           fi
-
-          git commit -m "docs: publish materials_current.b64gz.txt (joined from parts)"
-          BR="${GITHUB_REF_NAME:-main}"
-          for attempt in 1 2 3; do
-            git fetch origin "$BR" --depth=50 || git fetch --unshallow
-            git pull --rebase --autostash origin "$BR" || true
-            if git push; then
-              echo "Push succeeded on attempt #$attempt"
-              exit 0
-            fi
-            echo "Push failed (attempt #$attempt). Retrying..."
-            sleep 2
-          done
-          echo "Push failed after retries"; exit 1
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com"                 commit -m "docs: publish materials (markets=$(wc -l < markets.txt))"
+          git push
