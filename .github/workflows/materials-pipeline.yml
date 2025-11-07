@@ -1,39 +1,29 @@
 name: Materials Pipeline (5m)
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"  # runs every 5 minutes (UTC)
-  push:
-    paths:
-      - ".github/workflows/materials-pipeline.yml"
+    - cron: '*/5 * * * *'   # UTC 기준. KST도 5분 주기 동일
+  workflow_dispatch:
+
+concurrency:
+  group: materials
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
-concurrency:
-  group: materials-pipeline
-  cancel-in-progress: true
+env:
+  CHUNK: 10
+  PIN_GOOD: 35794df604aecf3d5126f8614e15896d7a290c0e
 
 jobs:
   build_and_publish:
     name: Build & Publish materials
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CHUNK: "10"
-      # Known-good parts commit that probed OK earlier; override via env PIN_GOOD at dispatch time if needed
-      PIN_GOOD: "35794df604aecf3d5126f8614e15896d7a290c0e"
-
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Configure git author
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Ensure jq
         run: |
@@ -42,9 +32,57 @@ jobs:
           sudo apt-get install -y jq
           jq --version
 
-      - name: Publish LLM materials (pin, repair, join, push)
+      - name: Pin partlist to good commit
         run: |
           set -euo pipefail
-          chmod +x bin/*.sh || true
-          # Use the known-good pin (can be overridden by setting PIN_GOOD via workflow_dispatch inputs or env)
-          bin/publish_llm_materials.sh web/docs/parts/materials.partlist.urls web/docs/LLM_MATERIALS.json "${PIN_GOOD}"
+          bin/pin_partlist_to_commit.sh web/docs/parts/materials.partlist.urls "$PIN_GOOD"
+
+      - name: Probe & repair partlist
+        run: |
+          set -euo pipefail
+          bin/repair_partlist_by_probe.sh web/docs/parts/materials.partlist.urls "$PIN_GOOD" > web/docs/parts/materials.partlist.urls.fixed
+          mv web/docs/parts/materials.partlist.urls.fixed web/docs/parts/materials.partlist.urls
+
+      - name: Join from parts -> web/docs/LLM_MATERIALS.json
+        id: join
+        run: |
+          set -euo pipefail
+          mkdir -p web/docs
+          bin/join_from_parts_strict.sh web/docs/parts/materials.partlist.urls web/docs/LLM_MATERIALS.json
+          ver=$(jq -r '.version' web/docs/LLM_MATERIALS.json)
+          ts=$(jq -r '.timestamps.utc' web/docs/LLM_MATERIALS.json)
+          n=$(jq -r '.markets|length' web/docs/LLM_MATERIALS.json)
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$ts" >> "$GITHUB_OUTPUT"
+          echo "markets=$n" >> "$GITHUB_OUTPUT"
+          printf "== summary ==\n%s\n%s\n%s\n" "$ver" "$ts" "$n"
+
+      - name: Write single b64+gz -> web/docs/materials_current.b64gz.txt
+        run: |
+          set -euo pipefail
+          gzip -c web/docs/LLM_MATERIALS.json | base64 -w0 > web/docs/materials_current.b64gz.txt
+
+      - name: Commit & push docs
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/docs/LLM_MATERIALS.json web/docs/materials_current.b64gz.txt web/docs/parts/materials.partlist.urls
+          git commit -m "docs: publish LLM_MATERIALS.json (${{ steps.join.outputs.timestamp }}) [markets=${{ steps.join.outputs.markets }}]" || exit 0
+          git push
+
+      - name: Upload artifacts (retention 7 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: materials-${{ steps.join.outputs.timestamp }}
+          path: |
+            web/docs/LLM_MATERIALS.json
+            web/docs/materials_current.b64gz.txt
+          retention-days: 7
+
+      - name: Smoke test CDN
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://cdn.jsdelivr.net/gh/${{ github.repository }}@main/web/docs/LLM_MATERIALS.json"             | jq -e -r '[.version, .timestamps.utc, (.markets|length)] | @tsv'
+          curl -fsSL "https://cdn.jsdelivr.net/gh/${{ github.repository }}@main/web/docs/materials_current.b64gz.txt" | head -c 4 | grep -qx "H4sI"
