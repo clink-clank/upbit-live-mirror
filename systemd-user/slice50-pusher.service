@@ -1,0 +1,10 @@
+[Unit]
+Description=Push next Jina slice (50-part) to the repo
+
+[Service]
+Type=oneshot
+Environment=REPO_DIR=%h/upbit-live-mirror
+Environment=SRC_FILE=%h/upbit-live-mirror/web/docs/LLM_MATERIALS.json
+Environment=OUT_DIR=%h/upbit-live-mirror/web/docs/jina_slices/materials_current
+WorkingDirectory=%h/upbit-live-mirror
+ExecStart=/bin/bash -lc '%h/upbit-live-mirror/bin/slice50_push_once.sh "$SRC_FILE" "$OUT_DIR"'
