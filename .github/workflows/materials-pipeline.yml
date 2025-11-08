@@ -43,6 +43,7 @@ jobs:
 
       - name: Build & publish LLM materials (join parts ➜ JSON + single b64gz)
         env:
+          PIN_GOOD: ${{ github.sha }}
           PIN_GOOD: "35794df604aecf3d5126f8614e15896d7a290c0e"
         run: |
           set -euo pipefail
